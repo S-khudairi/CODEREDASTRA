@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -16,6 +16,10 @@ export function PhotoAnalysis() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Mock analysis function
   const analyzeImage = (file: File) => {
@@ -64,19 +68,56 @@ export function PhotoAnalysis() {
     }
   };
 
-  const handleCameraCapture = () => {
-    // In a real app, this would open the device camera
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.capture = "environment";
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
+  const startCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      setStream(mediaStream);
+      setShowCamera(true);
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      alert('Camera access denied or not available');
+    }
+  };
+
+  // Set video stream when camera opens
+  useEffect(() => {
+    if (showCamera && stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [showCamera, stream]);
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setShowCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+
+    if (!context) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0);
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `photo-${Date.now()}.jpg`, {
+          type: 'image/jpeg'
+        });
         analyzeImage(file);
+        stopCamera();
       }
-    };
-    input.click();
+    }, 'image/jpeg', 0.8);
   };
 
   const resetAnalysis = () => {
@@ -84,6 +125,15 @@ export function PhotoAnalysis() {
     setPreviewImage(null);
     setIsAnalyzing(false);
   };
+
+  // Cleanup camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
 
   return (
     <div className="space-y-4">
@@ -99,28 +149,76 @@ export function PhotoAnalysis() {
         </CardHeader>
         <CardContent className="space-y-4">
           {!result && !isAnalyzing && (
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Button
-                onClick={handleCameraCapture}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                <Camera className="mr-2 h-4 w-4" />
-                Take Photo
-              </Button>
-              <label className="flex-1">
-                <Button variant="outline" className="w-full" asChild>
-                  <span>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload Photo
-                  </span>
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={startCamera}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  Take Photo
                 </Button>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+                <label className="flex-1">
+                  <Button variant="outline" className="w-full" asChild>
+                    <span>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload Photo
+                    </span>
+                  </Button>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {/* Camera Popup Box */}
+              {showCamera && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                  <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold">Take a Photo</h3>
+                      <Button
+                        onClick={stopCamera}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                    
+                    {/* Live Camera Feed */}
+                    <div className="relative bg-black rounded-lg overflow-hidden mb-4">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-64 object-cover"
+                        onLoadedMetadata={() => {
+                          if (videoRef.current) {
+                            videoRef.current.play().catch(console.error);
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {/* Hidden canvas for capture */}
+                    <canvas ref={canvasRef} className="hidden" />
+
+                    {/* Capture Button */}
+                    <Button
+                      onClick={capturePhoto}
+                      className="w-full bg-green-600 hover:bg-green-700"
+                    >
+                      <Camera className="mr-2 h-4 w-4" />
+                      Capture Photo
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
