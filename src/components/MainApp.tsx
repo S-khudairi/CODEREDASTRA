@@ -8,9 +8,10 @@ import { Button } from "./ui/button";
 interface MainAppProps {
   userEmail: string;
   onLogout: () => void;
+  currentUserId: string;
 }
 
-export function MainApp({ userEmail, onLogout }: MainAppProps) {
+export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-emerald-50">
       <div className="max-w-4xl mx-auto p-4 pb-8">
@@ -56,7 +57,7 @@ export function MainApp({ userEmail, onLogout }: MainAppProps) {
           </TabsContent>
 
           <TabsContent value="leaderboard">
-            <PointsLeaderboard />
+            <PointsLeaderboard currentUserId={currentUserId}/>
           </TabsContent>
         </Tabs>
       </div>

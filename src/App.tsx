@@ -7,11 +7,12 @@ import { onAuthStateChanged } from "firebase/auth";
 import { signInUser, signUpUser, logoutUser } from "./firebase/auth";
 import { auth } from "./firebase/firebaseConfig";
 import { Trophy } from "lucide-react";
-
+import { createNewUserProfile } from "./firebase/db";
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Firebase auth
@@ -19,10 +20,12 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUserEmail(user.email || '');
+        setCurrentUserId(user.uid);
         setIsAuthenticated(true);
       }
       else{
         setUserEmail("");
+        setCurrentUserId(null);
         setIsAuthenticated(false);
       }
       setIsLoading(false);
@@ -34,12 +37,14 @@ export default function App() {
 
   const handleLogin = async (email: string, password: string, name?: string) => {
     try{
+      let user;
       if (name) {
         // Sign-up logic
-        await signUpUser(email, password, name);
+        user = await signUpUser(email, password, name);
+        await createNewUserProfile(user.uid, name);
       } else {
         // Sign-in Logic
-        await signInUser(email, password);
+        user = await signInUser(email, password);
       }
       // on AuthStateChanged hanfler takes care of updating state (isAuthenticated and userEmail)
     } catch(error) {
@@ -62,9 +67,9 @@ export default function App() {
     return <div>Loading session...</div>
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !currentUserId) {
     return <AuthScreen onLogin={handleLogin} />;
   }
 
-  return <MainApp userEmail={userEmail} onLogout={handleLogout} />;
+  return <MainApp userEmail={userEmail} onLogout={handleLogout} currentUserId={currentUserId}/>;
 }
