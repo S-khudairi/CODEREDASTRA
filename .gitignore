@@ -109,3 +109,4 @@ Desktop.ini
 
 # Vite/Build Artifacts
 /.vite
+backend/serviceAccountFirebase.json

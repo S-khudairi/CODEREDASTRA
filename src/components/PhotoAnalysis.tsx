@@ -310,14 +310,20 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
                 />
               </div>
 
-              <Alert className={result.recyclable ? "border-green-500 bg-green-50" : "border-red-500 bg-red-50"}>
+              <Alert
+                className={`${
+                  result.recyclable
+                    ? "border-green-500 bg-green-50"
+                    : "border-red-500 bg-red-50"
+                } p-4 block`}
+              >
                 <div className="flex items-start gap-3">
                   {result.recyclable ? (
                     <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
                   ) : (
                     <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
                   )}
-                  <div className="flex-1">
+                  <div className="flex-1 w-full">
                     <div className="flex items-center gap-2 mb-2">
                       <p className={result.recyclable ? "text-green-900" : "text-red-900"}>
                         {result.material}
@@ -326,7 +332,7 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
                         {result.recyclable ? "Recyclable" : "Not Recyclable"}
                       </Badge>
                     </div>
-                    <AlertDescription className={result.recyclable ? "text-green-800" : "text-red-800"}>
+                    <AlertDescription className={`${result.recyclable ? "text-green-800" : "text-red-800"} w-full break-words`}>
                       {result.instructions}
                     </AlertDescription>
                     <p className="text-xs text-gray-600 mt-2">
