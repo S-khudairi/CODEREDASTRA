@@ -106,3 +106,6 @@ Desktop.ini
 # Lock files (uncomment if you want to ignore them)
 # package-lock.json
 # yarn.lock
+
+# Vite/Build Artifacts
+/.vite

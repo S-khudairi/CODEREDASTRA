@@ -5,9 +5,10 @@ import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Recycle, Mail, Lock, User, Eye, EyeOff, Camera, MapPin, Trophy } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Loader2 } from "lucide-react";
 
 interface AuthScreenProps {
-  onLogin: (email: string, password: string) => void;
+  onLogin: (email: string, password: string, name?: string) => Promise<void>;
 }
 
 export function AuthScreen({ onLogin }: AuthScreenProps) {
@@ -17,8 +18,9 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -45,14 +47,23 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
       return;
     }
 
-    // Dummy authentication - in real app, this would call an API
-    if (isLogin) {
-      // Simulate login
-      onLogin(email, password);
-    } else {
-      // Simulate sign up and auto-login
-      onLogin(email, password);
+    setIsLoading(true);
+
+    // authentication with firebase
+    try {
+      if (isLogin){
+        await onLogin(email, password);
+      }else{
+        await onLogin(email, password, name);
+      }
+
+    } catch (err){
+        console.error("Firebase Auth Error", err);
+        setError("Authentication failed. Please check your credentials.");
+    } finally{
+      setIsLoading(false);
     }
+    
   };
 
   const toggleMode = () => {
@@ -154,8 +165,16 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
               <Button
                 type="submit"
                 className="w-full bg-green-600 hover:bg-green-700"
+                disabled={isLoading}
               >
-                {isLogin ? "Sign In" : "Create Account"}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {isLogin ? "Signing In..." : "Creating Account..."}
+                  </>
+                ) : (
+                  isLogin ? "Sign in" : "Create Account"
+                )}
               </Button>
             </form>
 
