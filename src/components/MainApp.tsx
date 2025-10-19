@@ -19,7 +19,7 @@ export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
         <div className="flex items-center justify-between py-6">
           <div>
             <h1 className="text-green-700 mb-2">EcoScan</h1>
-            <p className="text-gray-600">Recycle smarter, earn rewards</p>
+            <p className="text-gray-600">Recycle smarter, gain <span className="font-semibold text-green-600">eco clout</span></p>
           </div>
           <Button
             variant="outline"

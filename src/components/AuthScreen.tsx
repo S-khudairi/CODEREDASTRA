@@ -113,7 +113,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
             <Recycle className="h-10 w-10 text-white" />
           </div>
           <h1 className="text-green-700 mb-2 text-2xl font-semibold">EcoScan</h1>
-          <p className="text-gray-600">Recycle smarter, earn rewards</p>
+          <p className="text-gray-600">Recycle smarter, gain <span className="font-semibold text-green-600">eco clout</span></p>
         </div>
 
         {/* CONDITIONAL CARD RENDERING */}
