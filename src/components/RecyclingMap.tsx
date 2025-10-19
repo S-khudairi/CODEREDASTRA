@@ -16,14 +16,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Extend ImportMeta to include env property for Vite environment variables
-declare global {
-  interface ImportMeta {
-    env: {
-      VITE_LOCATIONIQ_API_KEY: string;
-    };
-  }
-}
+
 
 interface RecyclingLocation {
   id: string;
@@ -39,17 +32,30 @@ interface RecyclingLocation {
   distanceValue: number; // For sorting
 }
 
-interface LocationIQPlace {
-  place_id: string;
-  osm_id?: string;
-  lat: string;
-  lon: string;
-  display_name: string;
-  // Search API specific fields
-  type?: string;
-  importance?: number;
-  // Other possible fields
-  [key: string]: any;
+interface GeoapifyPlace {
+  type: string;
+  properties: {
+    name?: string;
+    address_line1?: string;
+    address_line2?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    postcode?: string;
+    lat: number;
+    lon: number;
+    place_id: string;
+    categories?: string[];
+    datasource?: {
+      sourcename: string;
+      attribution: string;
+      license: string;
+    };
+  };
+  geometry: {
+    type: string;
+    coordinates: [number, number];
+  };
 }
 
 export function RecyclingMap() {
@@ -65,7 +71,8 @@ export function RecyclingMap() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const apiKey = import.meta.env.VITE_LOCATIONIQ_API_KEY;
+  const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY;
+  console.log('Geoapify API Key loaded:', !!apiKey, apiKey ? 'Present' : 'Missing');
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -93,61 +100,156 @@ export function RecyclingMap() {
   };
 
   const fetchNearbyLocations = async (lat: number, lon: number) => {
+    console.log('Fetching locations for:', lat, lon);
+    console.log('API Key:', apiKey);
+
     try {
-      // Try multiple search approaches
-      const queries = [
+      // Search for recycling locations with various naming patterns
+      const searchTerms = [
         'recycling center',
-        'recycle center',
-        'waste management',
-        'transfer station'
+        'recycling',
+        'recycling depository',
+        'neighborhood recycling',
+        'municipal recycling',
+        'waste recycling',
+        'recycling facility',
+        'recycling drop off',
+        'recycling collection',
       ];
 
-      let allResults: LocationIQPlace[] = [];
+      let allResults: GeoapifyPlace[] = [];
 
-      for (const query of queries) {
+      for (const term of searchTerms) {
         try {
-          const response = await fetch(
-            `https://us1.locationiq.com/v1/search.php?key=${apiKey}&q=${encodeURIComponent(query)}&lat=${lat}&lon=${lon}&limit=10&format=json&bounded=1&viewbox=${lon-0.5},${lat-0.5},${lon+0.5},${lat+0.5}`
-          );
+          // Use the same format as the working example
+          const encodedText = encodeURIComponent(term);
+          // Search within 8 miles (approximately 12,875 meters)
+          const url = `https://api.geoapify.com/v1/geocode/search?text=${encodedText}&filter=circle:${lon},${lat},12875&limit=10&apiKey=${apiKey}`;
+          console.log('Fetching URL:', url);
+
+          const response = await fetch(url);
+          console.log('Response status:', response.status);
 
           if (response.ok) {
-            const data: LocationIQPlace[] = await response.json();
-            allResults = allResults.concat(data);
+            const data = await response.json();
+            console.log('Response data for', term, ':', data);
+            if (data.features) {
+              // Convert geocoding results to our format
+              const formattedResults = data.features.map((feature: any) => ({
+                type: "Feature",
+                properties: {
+                  name: feature.properties.name || term,
+                  address_line1: feature.properties.address_line1 || feature.properties.formatted,
+                  city: feature.properties.city,
+                  state: feature.properties.state,
+                  lat: feature.properties.lat,
+                  lon: feature.properties.lon,
+                  place_id: feature.properties.place_id || `geocode_${Math.random()}`,
+                },
+                geometry: feature.geometry
+              }));
+              allResults = allResults.concat(formattedResults);
+            }
+          } else {
+            console.error('API Error for', term, ':', response.status, response.statusText);
+            const errorText = await response.text();
+            console.error('Error details:', errorText);
           }
         } catch (err) {
-          console.warn(`Search failed for "${query}":`, err);
+          console.warn(`Search failed for "${term}":`, err);
         }
       }
 
-      // Remove duplicates based on place_id
-      const uniqueResults = allResults.filter((place, index, self) =>
-        index === self.findIndex(p => p.place_id === place.place_id)
-      );
+      // Try Places API with circle filter for better proximity results
+      try {
+        const placesUrl = `https://api.geoapify.com/v2/places?categories=commercial.waste_management.recycling,commercial.waste_management.waste_collection,commercial.waste_management&filter=circle:${lon},${lat},12875&limit=20&apiKey=${apiKey}`;
+        console.log('Trying Places API:', placesUrl);
 
-      console.log('LocationIQ Search Results:', uniqueResults); // Debug log
+        const placesResponse = await fetch(placesUrl);
+        if (placesResponse.ok) {
+          const placesData = await placesResponse.json();
+          console.log('Places API results:', placesData);
+          if (placesData.features && placesData.features.length > 0) {
+            // Convert places results to our format
+            const placesResults = placesData.features.map((feature: any) => ({
+              type: "Feature",
+              properties: {
+                name: feature.properties.name || "Recycling Center",
+                address_line1: feature.properties.address_line1 || feature.properties.formatted,
+                city: feature.properties.city,
+                state: feature.properties.state,
+                lat: feature.properties.lat,
+                lon: feature.properties.lon,
+                place_id: feature.properties.place_id || `places_${Math.random()}`,
+              },
+              geometry: feature.geometry
+            }));
+            allResults = allResults.concat(placesResults);
+          }
+        }
+      } catch (err) {
+        console.warn('Places API failed:', err);
+      }
 
-      const mappedLocations: RecyclingLocation[] = uniqueResults.map((place) => {
-        const distance = calculateDistance(lat, lon, parseFloat(place.lat), parseFloat(place.lon));
+      console.log('All results:', allResults);
+
+      // Remove duplicates based on coordinates (within 100 meters)
+      const uniqueResults = allResults.filter((place, index, self) => {
+        return index === self.findIndex(p => {
+          const distance = calculateDistance(
+            place.properties.lat, place.properties.lon,
+            p.properties.lat, p.properties.lon
+          );
+          return distance < 0.1; // Less than 100 meters apart
+        });
+      });
+
+      console.log('Unique results:', uniqueResults);
+
+      // Simple filter: just check if "recycle" or "recycling" appears anywhere in the text
+      const filteredResults = uniqueResults.filter((place) => {
+        const name = (place.properties.name || '').toLowerCase();
+        const address = (place.properties.address_line1 || '').toLowerCase();
+        const allText = `${name} ${address}`;
+        
+        // Accept if "recycle" or "recycling" appears anywhere
+        return allText.includes('recycle') || allText.includes('recycling');
+      });
+
+      console.log('Filtered results:', filteredResults);
+
+      const mappedLocations: RecyclingLocation[] = filteredResults.map((place) => {
+        const distance = calculateDistance(lat, lon, place.properties.lat, place.properties.lon);
+        const address = [
+          place.properties.address_line1,
+          place.properties.address_line2,
+          place.properties.city,
+          place.properties.state,
+          place.properties.postcode
+        ].filter(Boolean).join(', ');
+
         return {
-          id: place.place_id,
-          name: place.display_name.split(',')[0] || "Recycling Center",
-          address: place.display_name,
+          id: place.properties.place_id,
+          name: place.properties.name || "Recycling Center",
+          address: address || place.properties.address_line1 || "Address not available",
           distance: `${distance.toFixed(1)} mi`,
           hours: "Hours not available",
           phone: "N/A",
           acceptedMaterials: ["Plastic", "Glass", "Metal", "Cardboard"],
           type: "center",
-          lat: parseFloat(place.lat),
-          lon: parseFloat(place.lon),
+          lat: place.properties.lat,
+          lon: place.properties.lon,
           distanceValue: distance,
         };
       });
 
       // Sort by distance (closest first)
+      console.log('Before sorting:', mappedLocations.map(loc => ({ name: loc.name, distance: loc.distanceValue })));
       mappedLocations.sort((a, b) => a.distanceValue - b.distanceValue);
+      console.log('After sorting:', mappedLocations.map(loc => ({ name: loc.name, distance: loc.distanceValue })));
 
-      // Limit to top 20 results
-      const limitedResults = mappedLocations.slice(0, 20);
+      // Limit to top 6 results
+      const limitedResults = mappedLocations.slice(0, 6);
 
       setLocations(limitedResults);
       sessionStorage.setItem('recyclingLocations', JSON.stringify(limitedResults));
@@ -209,12 +311,12 @@ export function RecyclingMap() {
             <div className="h-64 mb-4 rounded-lg overflow-hidden">
               <MapContainer
                 center={[userLocation.lat, userLocation.lon]}
-                zoom={10  }
+                zoom={11}
                 style={{ height: '100%', width: '100%' }}
               >
                 <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url={`https://maps.geoapify.com/v1/tile/osm-bright/{z}/{x}/{y}.png?apiKey=${apiKey}`}
+                  attribution='Powered by <a href="https://www.geoapify.com/" target="_blank">Geoapify</a> | <a href="https://openmaptiles.org/" target="_blank">© OpenMapTiles</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a> contributors'
                 />
                 {locations.map((location) => (
                   <Marker
