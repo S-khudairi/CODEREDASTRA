@@ -109,3 +109,5 @@ Desktop.ini
 
 # Vite/Build Artifacts
 /.vite
+ecoscan-8a754-firebase-adminsdk-fbsvc-6ef35c84e6.json
+backend/serviceAccountFirebase.json

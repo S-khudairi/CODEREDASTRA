@@ -1,10 +1,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Trophy, TrendingUp, Award, Medal } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { useState, useEffect } from "react"; // hooks
-import { collection, query, orderBy, limit, getDocs } from "firebase/firestore";    // firestore import
+import { useState, useEffect, useRef } from "react"; // hooks
+import { getUserWeeklyPoints } from "../firebase/db";
+import { collection, query, orderBy, limit, getDocs, getDoc, doc, where } from "firebase/firestore";    // firestore import
 import { db } from "../firebase/firestoreConfig";     // db
 
 interface LeaderboardUser {
@@ -35,7 +37,7 @@ const leaderboardData: LeaderboardUser[] = [
 ];
 */
 
-const weeklyProgressData = [
+const weeklyProgressFallback = [
   { day: "Mon", points: 45 },
   { day: "Tue", points: 80 },
   { day: "Wed", points: 65 },
@@ -45,57 +47,226 @@ const weeklyProgressData = [
   { day: "Sun", points: 90 },
 ];
 
-const useLeaderboardData = () => {
+// helper: format YYYY-MM-DD
+const toDateId = (d: Date) => d.toISOString().slice(0, 10);
+
+// generate last N days date strings (oldest -> newest)
+const lastNDates = (n: number, endDate = new Date()) => {
+  const arr: string[] = [];
+  const e = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate()));
+  for (let i = n - 1; i >= 0; i--) {
+    const dt = new Date(e);
+    dt.setUTCDate(e.getUTCDate() - i);
+    arr.push(toDateId(dt));
+  }
+  return arr;
+};
+
+const dayLabelFromISO = (isoDate: string) => {
+  try {
+    const d = new Date(isoDate + 'T00:00:00Z');
+    return d.toLocaleDateString(undefined, { weekday: 'short' });
+  } catch (e) {
+    return isoDate;
+  }
+};
+
+// NOTE: we intentionally do NOT query the `users` collection from the client anymore.
+// Leaderboard data should come from server-created snapshots under leaderboards/monthly/snapshots/{YYYY-MM}.
+// The client hook below only loads snapshots and exposes a manual refresh.
+
+// Monthly leaderboard hook: try ordering by pointsThisMonth, fallback to overall points
+const useMonthlyLeaderboard = (monthField = 'pointsThisMonth') => {
   const [data, setData] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchMonthlyRef = useRef<() => Promise<void> | null>(null);
+
+  // helpers to compute month ids
+  const currentMonthId = new Date().toISOString().slice(0,7); // YYYY-MM
+  const prevMonthId = (() => {
+    const d = new Date();
+    d.setUTCDate(1); // to avoid roll issues
+    d.setUTCMonth(d.getUTCMonth() - 1);
+    return d.toISOString().slice(0,7);
+  })();
+
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      // 1. Define the query
-      const q = query(
-        collection(db, "users"),
-        orderBy("points", "desc"),
-        limit(10)
-      );
-
+    let mounted = true;
+    const fetchMonthly = async () => {
+      setLoading(true);
       try {
-        const querySnapshot = await getDocs(q);
-        
-        let rank = 1;
-        const fetchedData: LeaderboardUser[] = querySnapshot.docs.map((doc) => {
-          const userData = doc.data();
-          const name = userData.name || "Anonymous";
-          const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
+        // 1) try snapshot for current month
+        const snapRef = doc(db, 'leaderboards', 'monthly', 'snapshots', currentMonthId);
+        let docSnap = await getDoc(snapRef);
 
-          return {
-            rank: rank++,
-            name: name,
-            points: userData.points || 0,
-            itemsRecycled: userData.itemsRecycled || 0,
-            initials: initials,
-          } as LeaderboardUser;
-        });
+        // 2) if no snapshot for current month, try previous month
+        if (!docSnap.exists()) {
+          const prevRef = doc(db, 'leaderboards', 'monthly', 'snapshots', prevMonthId);
+          docSnap = await getDoc(prevRef);
+        }
 
-        // 2. Handle the EMPTY database case gracefully
-        setData(fetchedData); // This will be [] if the database is empty
-      } catch (error) {
-        console.error("Error fetching leaderboard:", error);
+        if (docSnap.exists()) {
+          const top = docSnap.data()?.top || [];
+          // map top array to LeaderboardUser shape
+          const mapped: LeaderboardUser[] = (top as any[]).map((t, idx) => ({
+            uid: t.uid,
+            rank: t.rank || idx + 1,
+            name: t.name || 'Anonymous',
+            // snapshot script writes pointsGained and pointsEnd; prefer pointsGained for leaderboard value
+            points: t.pointsGained ?? t.points ?? 0,
+            itemsRecycled: t.itemsRecycled || 0,
+            initials: t.initials || (t.name || 'A').split(' ').map((n:string)=>n[0]).join('').toUpperCase().substring(0,2)
+          }));
+          if (mounted) setData(mapped);
+        } else {
+          // 3) fallback: compute monthly top-10 client-side by summing users' dailyPoints for the current month
+          const allUsersSnap = await getDocs(collection(db, 'users'));
+          const candidates: LeaderboardUser[] = [];
+
+          // compute month range strings
+          const currentMonthIdLocal = new Date().toISOString().slice(0,7);
+          const [y, m] = currentMonthIdLocal.split('-').map(Number);
+          const start = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0,10);
+          const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0,10);
+
+          for (const udoc of allUsersSnap.docs) {
+            const u = udoc.data();
+            // skip obvious zeros to save reads
+            if (!u.points && !u.itemsRecycled) continue;
+
+            // fetch dailyPoints within month
+            const dpCol = collection(db, 'users', udoc.id, 'dailyPoints');
+            const dpQ = query(dpCol, where('date', '>=', start), where('date', '<=', end));
+            const dpSnap = await getDocs(dpQ);
+            let gained = 0;
+            let items = 0;
+            if (!dpSnap.empty) {
+              const docs = dpSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+              docs.sort((a,b) => a.id.localeCompare(b.id));
+              const firstPoints = Number(docs[0].points || 0);
+              const lastPoints = Number(docs[docs.length-1].points || 0);
+              gained = lastPoints - firstPoints;
+              items = docs.reduce((s, it) => s + (Number(it.itemsRecycled||0)), 0);
+            } else {
+              // no daily docs this month; skip
+              continue;
+            }
+
+            const name = udoc.data().name || 'Anonymous';
+            const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0,2);
+            candidates.push({ uid: udoc.id, rank: 0, name, points: gained, itemsRecycled: items, initials });
+          }
+
+          // sort and pick top 10
+          candidates.sort((a,b) => b.points - a.points);
+          const top = candidates.slice(0,10).map((c, i) => ({ ...c, rank: i+1 }));
+          if (mounted) setData(top);
+        }
+      } catch (err) {
+        console.error('Failed to fetch monthly leaderboard', err);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
-    fetchLeaderboard();
-  }, []);
+    // store reference so UI can trigger a manual refresh
+    fetchMonthlyRef.current = fetchMonthly;
+    // call once on mount
+    fetchMonthlyRef.current();
 
-  return { data, loading };
+    return () => { mounted = false; };
+  }, [monthField]);
+
+  const refresh = async () => {
+    if (fetchMonthlyRef.current) await fetchMonthlyRef.current();
+  };
+
+  return { data, loading, refresh };
 };
 
 export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
   
-  const { data: leaderboardData, loading } = useLeaderboardData();
+  const { data: monthlyLeaderboard, loading: monthlyLoading, refresh: refreshMonthly } = useMonthlyLeaderboard();
 
-  const userStats = leaderboardData.find(user => user.uid === currentUserId) || { 
+  const [weeklyData, setWeeklyData] = useState(weeklyProgressFallback);
+  const [weeklyLoading, setWeeklyLoading] = useState(false);
+  const [debugDocs, setDebugDocs] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      if (!currentUserId) return;
+      console.debug('PointsLeaderboard: loading weekly points for', currentUserId);
+      setWeeklyLoading(true);
+      try {
+        const days = 7;
+        const docs = await getUserWeeklyPoints(currentUserId, days);
+        console.debug('PointsLeaderboard: fetched weekly docs', docs);
+
+        // docs is oldest -> newest and may include one extra previous day for delta computation
+        // Build a map from date->cumulative points and a sorted list of available dates
+        const cumulative = new Map<string, number>();
+        for (const d of docs) {
+          const dateStr = d.date || (d.id as string) || String(d.date);
+          cumulative.set(dateStr, Number(d.points || 0));
+        }
+
+        const availableDates = Array.from(cumulative.keys()).sort(); // ascending
+
+        // Helper: find last available date <= target (binary search simple)
+        const lastOnOrBefore = (target: string) => {
+          // availableDates are in YYYY-MM-DD so lexicographic compare works
+          for (let i = availableDates.length - 1; i >= 0; i--) {
+            if (availableDates[i] <= target) return availableDates[i];
+          }
+          return null;
+        };
+
+        // Helper: find last available date < target
+        const lastBefore = (target: string) => {
+          for (let i = availableDates.length - 1; i >= 0; i--) {
+            if (availableDates[i] < target) return availableDates[i];
+          }
+          return null;
+        };
+
+        // Prepare the last N dates we want to display (oldest -> newest)
+        const dates = lastNDates(days);
+
+        // For each display date, compute daily gain = cumulative[lastOnOrBefore(date)] - cumulative[lastBefore(lastOnOrBefore(date))]
+        const chartData = dates.map((dateStr) => {
+          const lastForDay = lastOnOrBefore(dateStr);
+          if (!lastForDay) {
+            return { day: dayLabelFromISO(dateStr), points: 0 };
+          }
+          const prevForDay = lastBefore(lastForDay);
+          const todayCum = cumulative.get(lastForDay) ?? 0;
+          if (!prevForDay) {
+            // No snapshot before this day — prefer showing 0 gain rather than the full cumulative value
+            return { day: dayLabelFromISO(dateStr), points: 0 };
+          }
+          const prevCum = cumulative.get(prevForDay) ?? 0;
+          const gain = todayCum - prevCum;
+          return { day: dayLabelFromISO(dateStr), points: gain >= 0 ? gain : 0 };
+        });
+
+        if (mounted) setWeeklyData(chartData.length ? chartData : weeklyProgressFallback);
+        if (mounted) setDebugDocs(docs);
+      } catch (err) {
+        console.error('Failed to load weekly points', err);
+        if (mounted) setWeeklyData(weeklyProgressFallback);
+      } finally {
+        if (mounted) setWeeklyLoading(false);
+      }
+    };
+
+    load();
+    return () => { mounted = false; };
+  }, [currentUserId]);
+
+  // Prefer monthly leaderboard for user stats (as leaderboard shows month top 10), fallback to overall
+  const userStats = (monthlyLeaderboard.find((user: LeaderboardUser) => user.uid === currentUserId)) || { 
         rank: 0, 
         points: 0, 
         itemsRecycled: 0, 
@@ -109,11 +280,14 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
     return <span className="text-gray-500">#{rank}</span>;
   };
 
-  if (loading) {
+  if (monthlyLoading) {
     return <Card className="p-10 text-center text-gray-500">Loading Leaderboard...</Card>;
   }
 
-  const showEmptyState = leaderboardData.length === 0;
+  const showEmptyState = !(monthlyLeaderboard && monthlyLeaderboard.length > 0);
+
+  const displayLeaderboard = (monthlyLeaderboard && monthlyLeaderboard.length > 0) ? monthlyLeaderboard : [];
+  const displayLoading = monthlyLoading;
 
   return (
     <div className="space-y-4">
@@ -157,7 +331,7 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={weeklyProgressData}>
+            <LineChart data={weeklyData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="day" stroke="#6b7280" fontSize={12} />
               <YAxis stroke="#6b7280" fontSize={12} />
@@ -180,26 +354,57 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
           </ResponsiveContainer>
           <div className="mt-4 text-center">
             <p className="text-gray-600 text-sm">
-              Total this week: <span className="text-green-600">610 points</span>
+              {weeklyLoading ? (
+                'Loading weekly summary...'
+              ) : (
+                <>Total this week: <span className="text-green-600">{weeklyData.reduce((s, it) => s + (it.points || 0), 0)} points</span></>
+              )}
             </p>
           </div>
         </CardContent>
       </Card>
 
+      {/*
+      <div className="text-right">
+        <Button size="sm" variant="ghost" onClick={() => {
+          if (debugDocs) {
+            // Print nicely to the browser console for inspection
+            console.group('raw dailyPoints');
+            console.table(debugDocs.map(d => ({ id: d.id || d.date, date: d.date, points: d.points, itemsRecycled: d.itemsRecycled })));
+            console.log(debugDocs);
+            console.groupEnd();
+          } else {
+            console.log('No dailyPoints documents fetched yet');
+          }
+        }}>
+          Log raw dailyPoints
+        </Button>
+      </div>
+      */}
+
       {/* Leaderboard */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="h-5 w-5 text-green-600" />
-            Top 10 Recyclers
-          </CardTitle>
-          <CardDescription>Community leaderboard for this month</CardDescription>
-        </CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Trophy className="h-5 w-5 text-green-600" />
+                  Top 10 Recyclers
+                </CardTitle>
+                <CardDescription>Community leaderboard for this month</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={async () => { await refreshMonthly(); }}>
+                  {monthlyLoading ? 'Refreshing...' : 'Refresh'}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            {leaderboardData.map((user) => (
+            <div className="space-y-2">
+            {displayLeaderboard.map((user: LeaderboardUser) => (
               <div
-                key={user.rank}
+                key={user.uid}
                 className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
                   user.uid === currentUserId
                     ? "bg-green-50 border-2 border-green-600"
@@ -232,25 +437,7 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
         </CardContent>
       </Card>
 
-      {/* Achievements */}
-      <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <div className="bg-amber-500 rounded-full p-2">
-              <Award className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <p className="text-amber-900 mb-1">Next Achievement</p>
-              <p className="text-amber-800 text-sm mb-2">
-                Recycle 15 more items to unlock "Century Club" badge!
-              </p>
-              <div className="bg-white rounded-full h-2 w-full overflow-hidden">
-                <div className="bg-amber-500 h-full" style={{ width: "73%" }}></div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Achievements card removed for now........ */}
     </div>
   );
 }
