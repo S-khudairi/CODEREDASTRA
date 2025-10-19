@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Camera, Upload, Loader2, CheckCircle, XCircle, Recycle } from "lucide-react";
+import { Camera, Upload, Loader2, CheckCircle, XCircle, Recycle, History, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "../firebase/firestoreConfig";
@@ -18,6 +18,14 @@ interface AnalysisResult {
   instructions?: string;
 }
 
+interface ScanHistoryItem {
+  id: string;
+  material: string;
+  recyclable: boolean;
+  timestamp: Date;
+  imageUrl: string;
+}
+
 interface PhotoAnalysisProps {
   currentUserId: string;
 }
@@ -31,15 +39,93 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 4;
+
+  // Mock scan history data for demo
+  const [scanHistory] = useState<ScanHistoryItem[]>([
+    {
+      id: '1',
+      material: 'Plastic Water Bottle',
+      recyclable: true,
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+      imageUrl: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=200&h=200&fit=crop'
+    },
+    {
+      id: '2',
+      material: 'Aluminum Soda Can',
+      recyclable: true,
+      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5 hours ago
+      imageUrl: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=200&h=200&fit=crop'
+    },
+    {
+      id: '3',
+      material: 'Pizza Box (Greasy)',
+      recyclable: false,
+      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+      imageUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200&h=200&fit=crop'
+    },
+    {
+      id: '4',
+      material: 'Glass Jar',
+      recyclable: true,
+      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+      imageUrl: 'https://images.unsplash.com/photo-1526947425960-945c6e72858f?w=200&h=200&fit=crop'
+    },
+    {
+      id: '5',
+      material: 'Cardboard Box',
+      recyclable: true,
+      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
+      imageUrl: 'https://images.unsplash.com/photo-1573883430060-e46dcafd8c3d?w=200&h=200&fit=crop'
+    },
+  ]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(scanHistory.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentItems = scanHistory.slice(startIndex, endIndex);
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const formatTimeAgo = (date: Date) => {
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return date.toLocaleDateString();
+  };
+
   const updateUserPoints = async (userId: string, recyclable: boolean) => {
     try {
       const pointsToAdd = recyclable ? 10 : 5;
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
+      
+      // Only increment itemsRecycled if the item is actually recyclable
+      const updateData: any = {
         points: increment(pointsToAdd),
-        itemsRecycled: increment(1),
-      });
-      console.log(`Added ${pointsToAdd} points for user ${userId}`);
+      };
+      
+      if (recyclable) {
+        updateData.itemsRecycled = increment(1);
+      }
+      
+      await updateDoc(userRef, updateData);
+      console.log(`Added ${pointsToAdd} points for user ${userId}${recyclable ? ' and incremented items recycled' : ''}`);
     } catch (error) {
       console.error("Error updating user points:", error);
     }
@@ -362,6 +448,100 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
                 Get 10 points for recyclable items and 5 points for learning about non-recyclables.
               </p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Scan History Library */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5 text-green-600" />
+            Scan History
+          </CardTitle>
+          <CardDescription>
+            Your recent material scans
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {scanHistory.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <History className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <p>No scans yet. Start analyzing items!</p>
+              </div>
+            ) : (
+              <>
+                {currentItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 p-2 rounded-lg border bg-white hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="relative w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.material}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-medium text-sm text-gray-900 truncate">
+                          {item.material}
+                        </p>
+                        <Badge
+                          variant={item.recyclable ? "default" : "destructive"}
+                          className="flex-shrink-0 text-xs h-5"
+                        >
+                          {item.recyclable ? (
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                          ) : (
+                            <XCircle className="h-3 w-3 mr-1" />
+                          )}
+                          {item.recyclable ? "Recyclable" : "Not Recyclable"}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-500">
+                        <Clock className="h-3 w-3" />
+                        <span>{formatTimeAgo(item.timestamp)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePreviousPage}
+                      disabled={currentPage === 1}
+                      className="flex items-center gap-1"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    
+                    <span className="text-sm text-gray-600">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleNextPage}
+                      disabled={currentPage === totalPages}
+                      className="flex items-center gap-1"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
