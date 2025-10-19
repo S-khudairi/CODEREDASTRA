@@ -3,15 +3,24 @@ import { Badge } from "./ui/badge";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Trophy, TrendingUp, Award, Medal } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { useState, useEffect } from "react"; // hooks
+import { collection, query, orderBy, limit, getDocs } from "firebase/firestore";    // firestore import
+import { db } from "../firebase/firestoreConfig";     // db
 
 interface LeaderboardUser {
   rank: number;
   name: string;
+  uid: string;
   points: number;
   itemsRecycled: number;
   initials: string;
 }
 
+interface PointsLeaderboardProps {
+  currentUserId: string; // The id of the currently logged-in user
+}
+
+/*
 const leaderboardData: LeaderboardUser[] = [
   { rank: 1, name: "Sarah Chen", points: 2847, itemsRecycled: 234, initials: "SC" },
   { rank: 2, name: "Mike Johnson", points: 2654, itemsRecycled: 219, initials: "MJ" },
@@ -24,6 +33,7 @@ const leaderboardData: LeaderboardUser[] = [
   { rank: 9, name: "Alex Kim", points: 1689, itemsRecycled: 139, initials: "AK" },
   { rank: 10, name: "Rachel Taylor", points: 1567, itemsRecycled: 129, initials: "RT" },
 ];
+*/
 
 const weeklyProgressData = [
   { day: "Mon", points: 45 },
@@ -35,7 +45,63 @@ const weeklyProgressData = [
   { day: "Sun", points: 90 },
 ];
 
-export function PointsLeaderboard() {
+const useLeaderboardData = () => {
+  const [data, setData] = useState<LeaderboardUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      // 1. Define the query
+      const q = query(
+        collection(db, "users"),
+        orderBy("points", "desc"),
+        limit(10)
+      );
+
+      try {
+        const querySnapshot = await getDocs(q);
+        
+        let rank = 1;
+        const fetchedData: LeaderboardUser[] = querySnapshot.docs.map((doc) => {
+          const userData = doc.data();
+          const name = userData.name || "Anonymous";
+          const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
+
+          return {
+            rank: rank++,
+            name: name,
+            points: userData.points || 0,
+            itemsRecycled: userData.itemsRecycled || 0,
+            initials: initials,
+          } as LeaderboardUser;
+        });
+
+        // 2. Handle the EMPTY database case gracefully
+        setData(fetchedData); // This will be [] if the database is empty
+      } catch (error) {
+        console.error("Error fetching leaderboard:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLeaderboard();
+  }, []);
+
+  return { data, loading };
+};
+
+export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
+  
+  const { data: leaderboardData, loading } = useLeaderboardData();
+
+  const userStats = leaderboardData.find(user => user.uid === currentUserId) || { 
+        rank: 0, 
+        points: 0, 
+        itemsRecycled: 0, 
+        initials: "Me", 
+        name: "You" 
+    };  
   const getRankBadge = (rank: number) => {
     if (rank === 1) return <Medal className="h-5 w-5 text-yellow-500" />;
     if (rank === 2) return <Medal className="h-5 w-5 text-gray-400" />;
@@ -43,7 +109,11 @@ export function PointsLeaderboard() {
     return <span className="text-gray-500">#{rank}</span>;
   };
 
-  const userStats = leaderboardData.find((u) => u.name === "You");
+  if (loading) {
+    return <Card className="p-10 text-center text-gray-500">Loading Leaderboard...</Card>;
+  }
+
+  const showEmptyState = leaderboardData.length === 0;
 
   return (
     <div className="space-y-4">
@@ -131,7 +201,7 @@ export function PointsLeaderboard() {
               <div
                 key={user.rank}
                 className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
-                  user.name === "You"
+                  user.uid === currentUserId
                     ? "bg-green-50 border-2 border-green-600"
                     : "bg-gray-50 hover:bg-gray-100"
                 }`}
@@ -139,19 +209,19 @@ export function PointsLeaderboard() {
                 <div className="w-8 flex items-center justify-center">
                   {getRankBadge(user.rank)}
                 </div>
-                <Avatar className={user.name === "You" ? "border-2 border-green-600" : ""}>
+                <Avatar className={user.uid === currentUserId ? "border-2 border-green-600" : ""}>
                   <AvatarFallback className={user.name === "You" ? "bg-green-600 text-white" : ""}>
                     {user.initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <p className={user.name === "You" ? "text-green-900" : ""}>
+                  <p className={user.uid === currentUserId ? "text-green-900" : ""}>
                     {user.name}
                   </p>
                   <p className="text-xs text-gray-500">{user.itemsRecycled} items recycled</p>
                 </div>
                 <div className="text-right">
-                  <p className={user.name === "You" ? "text-green-700" : "text-gray-700"}>
+                  <p className={user.uid === currentUserId ? "text-green-700" : "text-gray-700"}>
                     {user.points.toLocaleString()}
                   </p>
                   <p className="text-xs text-gray-500">points</p>
