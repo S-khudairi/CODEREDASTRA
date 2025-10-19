@@ -49,7 +49,7 @@ export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
           </TabsList>
 
           <TabsContent value="scan">
-            <PhotoAnalysis />
+            <PhotoAnalysis currentUserId={currentUserId} />
           </TabsContent>
 
           <TabsContent value="locations">

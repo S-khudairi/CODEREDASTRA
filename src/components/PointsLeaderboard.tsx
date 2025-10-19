@@ -60,6 +60,9 @@ const useLeaderboardData = () => {
 
       try {
         const querySnapshot = await getDocs(q);
+
+        console.log("Fetched leaderboard docs:", querySnapshot.size);
+        querySnapshot.forEach((d) => console.log("User:", d.id, d.data()));
         
         let rank = 1;
         const fetchedData: LeaderboardUser[] = querySnapshot.docs.map((doc) => {
@@ -69,6 +72,7 @@ const useLeaderboardData = () => {
 
           return {
             rank: rank++,
+            uid: userData.uid || doc.id,
             name: name,
             points: userData.points || 0,
             itemsRecycled: userData.itemsRecycled || 0,
