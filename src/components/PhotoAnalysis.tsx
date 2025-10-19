@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "./ui/alert";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "../firebase/firestoreConfig";
 import { doc, updateDoc, increment } from "firebase/firestore";
+import toast from "react-hot-toast";
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 
@@ -107,6 +108,18 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
       });
       if (currentUserId) {
         await updateUserPoints(currentUserId, parsed.recyclable);
+      }
+
+      if (parsed.recyclable) {
+        toast.success(`♻️ Scanned item is recyclable! You earned 10 points!`);
+      } else {
+        toast(`🧠 Scanned item is not recyclable — but you learned something! You earned 5 points.`, {
+          icon: "✨",
+          style: {
+            background: "#2d2d2d",
+            color: "#fff",
+          },
+        });
       }
     } catch (err) {
       console.error("Gemini Analysis Error:", err);
