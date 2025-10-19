@@ -27,15 +27,20 @@ interface RecyclingLocation {
   type: "center" | "dropoff" | "curbside";
   lat: number;
   lon: number;
+  distanceValue: number; // For sorting
 }
 
 interface LocationIQPlace {
   place_id: string;
-  osm_id: string;
+  osm_id?: string;
   lat: string;
   lon: string;
   display_name: string;
-  // other fields
+  // Search API specific fields
+  type?: string;
+  importance?: number;
+  // Other possible fields
+  [key: string]: any;
 }
 
 export function RecyclingMap() {
@@ -80,34 +85,63 @@ export function RecyclingMap() {
 
   const fetchNearbyLocations = async (lat: number, lon: number) => {
     try {
-      const response = await fetch(
-        `https://us1.locationiq.com/v1/nearby.php?key=${apiKey}&lat=${lat}&lon=${lon}&tag=amenity:recycling&radius=10000&format=json`
-      );
+      // Try multiple search approaches
+      const queries = [
+        'recycling center',
+        'recycle center',
+        'waste management',
+        'transfer station'
+      ];
 
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
+      let allResults: LocationIQPlace[] = [];
+
+      for (const query of queries) {
+        try {
+          const response = await fetch(
+            `https://us1.locationiq.com/v1/search.php?key=${apiKey}&q=${encodeURIComponent(query)}&lat=${lat}&lon=${lon}&limit=10&format=json&bounded=1&viewbox=${lon-0.5},${lat-0.5},${lon+0.5},${lat+0.5}`
+          );
+
+          if (response.ok) {
+            const data: LocationIQPlace[] = await response.json();
+            allResults = allResults.concat(data);
+          }
+        } catch (err) {
+          console.warn(`Search failed for "${query}":`, err);
+        }
       }
 
-      const data: LocationIQPlace[] = await response.json();
+      // Remove duplicates based on place_id
+      const uniqueResults = allResults.filter((place, index, self) =>
+        index === self.findIndex(p => p.place_id === place.place_id)
+      );
 
-      const mappedLocations: RecyclingLocation[] = data.map((place) => {
+      console.log('LocationIQ Search Results:', uniqueResults); // Debug log
+
+      const mappedLocations: RecyclingLocation[] = uniqueResults.map((place) => {
         const distance = calculateDistance(lat, lon, parseFloat(place.lat), parseFloat(place.lon));
         return {
           id: place.place_id,
-          name: "Recycling Center", // Default name since API doesn't provide specific names
+          name: place.display_name.split(',')[0] || "Recycling Center",
           address: place.display_name,
           distance: `${distance.toFixed(1)} mi`,
-          hours: "Hours not available", // API doesn't provide this
+          hours: "Hours not available",
           phone: "N/A",
-          acceptedMaterials: ["Plastic", "Glass", "Metal", "Cardboard"], // Generic materials
+          acceptedMaterials: ["Plastic", "Glass", "Metal", "Cardboard"],
           type: "center",
           lat: parseFloat(place.lat),
           lon: parseFloat(place.lon),
+          distanceValue: distance,
         };
       });
 
-      setLocations(mappedLocations);
-      sessionStorage.setItem('recyclingLocations', JSON.stringify(mappedLocations));
+      // Sort by distance (closest first)
+      mappedLocations.sort((a, b) => a.distanceValue - b.distanceValue);
+
+      // Limit to top 20 results
+      const limitedResults = mappedLocations.slice(0, 20);
+
+      setLocations(limitedResults);
+      sessionStorage.setItem('recyclingLocations', JSON.stringify(limitedResults));
       setLoading(false);
     } catch (err) {
       setLoading(false);
@@ -317,7 +351,8 @@ export function RecyclingMap() {
         {!loading && locations.length === 0 && userLocation && (
           <Card>
             <CardContent className="pt-6 text-center">
-              <p className="text-gray-600">No recycling locations found nearby. Try expanding your search radius or check back later.</p>
+              <p className="text-gray-600 mb-2">No recycling locations found in your area.</p>
+              <p className="text-sm text-gray-500">Try searching in a different location or check local government websites for recycling centers.</p>
             </CardContent>
           </Card>
         )}
