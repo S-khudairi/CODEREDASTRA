@@ -1,5 +1,6 @@
 @custom-variant dark (&:is(.dark *));
 
+
 :root {
   --font-size: 16px;
   --background: #ffffff;
@@ -186,4 +187,9 @@
 
 html {
   font-size: var(--font-size);
+}
+
+button {
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
 }
