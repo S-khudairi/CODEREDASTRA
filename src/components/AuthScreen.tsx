@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Recycle, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
+import { Recycle, Mail, Lock, User, Eye, EyeOff, Camera, MapPin, Trophy } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
 
 interface AuthScreenProps {
