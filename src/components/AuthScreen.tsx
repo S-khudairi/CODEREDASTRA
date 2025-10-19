@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Recycle, Mail, Lock, User, Eye, EyeOff, Camera, MapPin, Trophy } from "lucide-react";
+import { Recycle, Mail, Lock, User, Eye, EyeOff, Camera, MapPin, Trophy, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
-import { Loader2 } from "lucide-react";
+import { sendPasswordReset } from "../firebase/auth";
 
 interface AuthScreenProps {
   onLogin: (email: string, password: string, name?: string) => Promise<void>;
@@ -19,12 +19,21 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [showResetForm, setShowResetForm] = useState(false);
+
+  // Auto-clear reset message after 5 seconds
+  useEffect(() => {
+    if (resetMessage) {
+      const timer = setTimeout(() => setResetMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [resetMessage]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    // Validation
     if (!email || !password) {
       setError("Please fill in all fields");
       return;
@@ -40,7 +49,6 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
       return;
     }
 
-    // Simple email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setError("Please enter a valid email address");
@@ -49,21 +57,41 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
 
     setIsLoading(true);
 
-    // authentication with firebase
     try {
-      if (isLogin){
+      if (isLogin) {
         await onLogin(email, password);
-      }else{
+      } else {
         await onLogin(email, password, name);
       }
-
-    } catch (err){
-        console.error("Firebase Auth Error", err);
-        setError("Authentication failed. Please check your credentials.");
-    } finally{
+    } catch (err) {
+      console.error("Firebase Auth Error", err);
+      setError("Authentication failed. Please check your credentials.");
+    } finally {
       setIsLoading(false);
     }
-    
+  };
+
+  const handleResetPassword = async () => {
+    setError("");
+    setResetMessage(null);
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Please enter a valid email address to reset your password.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      await sendPasswordReset(email);
+      setResetMessage("Password reset link sent! Check your inbox.");
+      setShowResetForm(false);
+    } catch (err) {
+      console.error("Password Reset Error:", err);
+      setError("Could not send link. Please check the email address is correct.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const toggleMode = () => {
@@ -72,6 +100,8 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
     setEmail("");
     setPassword("");
     setName("");
+    setResetMessage(null);
+    setShowResetForm(false);
   };
 
   return (
@@ -82,125 +112,235 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
           <div className="inline-flex items-center justify-center w-20 h-20 bg-green-600 rounded-full mb-4">
             <Recycle className="h-10 w-10 text-white" />
           </div>
-          <h1 className="text-green-700 mb-2">EcoScan</h1>
+          <h1 className="text-green-700 mb-2 text-2xl font-semibold">EcoScan</h1>
           <p className="text-gray-600">Recycle smarter, earn rewards</p>
         </div>
 
-        {/* Auth Card */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>{isLogin ? "Welcome Back" : "Create Account"}</CardTitle>
-            <CardDescription>
-              {isLogin
-                ? "Sign in to continue recycling"
-                : "Join our community of eco-warriors"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {!isLogin && (
+        {/* CONDITIONAL CARD RENDERING */}
+        {showResetForm ? (
+          /* PASSWORD RESET CARD */
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle>Reset Password</CardTitle>
+              <CardDescription>
+                Enter your account email to receive a password reset link.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleResetPassword();
+                }}
+                className="space-y-4"
+              >
+                {/* Email Input */}
                 <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
+                  <Label htmlFor="email-reset">Email</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      id="name"
-                      type="text"
-                      placeholder="John Doe"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      id="email-reset"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       className="pl-10"
                     />
                   </div>
                 </div>
-              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
+                {/* Alerts */}
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                {resetMessage && (
+                  <Alert variant="default" className="bg-green-100 border-green-400 text-green-700">
+                    <AlertDescription>{resetMessage}</AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Send Reset Link Button */}
+                <Button
+                  type="submit"
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending Link...
+                    </>
+                  ) : (
+                    "Send Reset Link"
+                  )}
+                </Button>
+
+              </form>
+
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => {
+                    setShowResetForm(false);
+                    setError("");
+                    setResetMessage(null);
+                  }}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  Back to Sign In
+                </button>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
+            </CardContent>
+          </Card>
+        ) : (
+          /* MAIN LOGIN/SIGNUP CARD */
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle>{isLogin ? "Welcome Back" : "Create Account"}</CardTitle>
+              <CardDescription>
+                {isLogin
+                  ? "Sign in to continue recycling"
+                  : "Join our community of eco-warriors"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
+              {resetMessage && (
+                <Alert variant="default" className="bg-green-100 border-green-400 text-green-700">
+                  <AlertDescription>{resetMessage}</AlertDescription>
+                </Alert>
+              )}
 
-              <Button
-                type="submit"
-                className="w-full bg-green-600 hover:bg-green-700"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {isLogin ? "Signing In..." : "Creating Account..."}
-                  </>
-                ) : (
-                  isLogin ? "Sign in" : "Create Account"
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Full Name (Signup only) */}
+                {!isLogin && (
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Full Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        id="name"
+                        type="text"
+                        placeholder="Carl Guinaldo"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
                 )}
-              </Button>
-            </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
-                {isLogin ? "Don't have an account? " : "Already have an account? "}
-                <button
-                  onClick={toggleMode}
-                  className="text-green-600 hover:text-green-700"
+                {/* Email Input */}
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+
+                {/* Password Input */}
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit Button */}
+                <Button
+                  type="submit"
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  disabled={isLoading}
                 >
-                  {isLogin ? "Sign Up" : "Sign In"}
-                </button>
-              </p>
-            </div>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {isLogin ? "Signing In..." : "Creating Account..."}
+                    </>
+                  ) : (
+                    isLogin ? "Sign In" : "Create Account"
+                  )}
+                </Button>
+              </form>
 
-            {isLogin && (
+              {/* Login/Signup Toggle */}
               <div className="mt-4 text-center">
-                <button className="text-sm text-gray-500 hover:text-gray-700">
-                  Forgot password?
-                </button>
+                {isLogin ? (
+                  <p className="text-sm text-gray-500">
+                    Don't have an account?{" "}
+                    <button
+                      onClick={toggleMode}
+                      className="text-green-600 hover:text-green-700 font-semibold"
+                      type="button"
+                    >
+                      Sign Up
+                    </button>
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    Already have an account?{" "}
+                    <button
+                      onClick={toggleMode}
+                      className="text-green-600 hover:text-green-700 font-semibold"
+                      type="button"
+                    >
+                      Sign In
+                    </button>
+                  </p>
+                )}
               </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Features Preview */}
+              {/* Forgot Password Button */}
+              {isLogin && (
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={() => {
+                      setShowResetForm(true);
+                      setError("");
+                      setResetMessage(null);
+                    }}
+                    type="button"
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Features Preview (Signup only) */}
         {!isLogin && (
           <div className="mt-6 bg-white rounded-lg shadow p-4 space-y-3">
             <div className="flex items-center gap-3 text-sm text-gray-600">

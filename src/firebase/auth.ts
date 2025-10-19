@@ -1,6 +1,6 @@
 // src/firebase/auth.ts
 
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 import { auth as firebaseAuth } from "./firebaseConfig"; // Import the initialized auth object
 
 export const signInUser = async (email: string, password: string) => {
@@ -19,4 +19,7 @@ export const logoutUser = async () => {
   await signOut(firebaseAuth);
 };
 
-
+// Forgot password implementation
+export const sendPasswordReset = async (email: string) => {
+    await sendPasswordResetEmail(firebaseAuth, email);
+};
