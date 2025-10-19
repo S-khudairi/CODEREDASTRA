@@ -5,7 +5,7 @@ import { PointsLeaderboard } from "./PointsLeaderboard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Button } from "./ui/button";
 
-import logoUrl from "../assets/ecoscan_icon_alt_500px.svg";
+import logoUrl from "../assets/ecoscan_icon_alt3_500px.svg";
 
 interface MainAppProps {
   userEmail: string;
