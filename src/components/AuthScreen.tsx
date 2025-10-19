@@ -4,6 +4,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Recycle, Mail, Lock, User, Eye, EyeOff, Camera, MapPin, Trophy, Loader2 } from "lucide-react";
+import logoUrl from "../assets/ecoscan_icon_alt3_500px.svg";
 import { Alert, AlertDescription } from "./ui/alert";
 import { sendPasswordReset } from "../firebase/auth";
 
@@ -109,8 +110,8 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
       <div className="w-full max-w-md">
         {/* Logo and Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-green-600 rounded-full mb-4">
-            <Recycle className="h-10 w-10 text-white" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <img src={logoUrl} alt="EcoScan logo" className="w-auto" style={{ height: '5rem' }} />
           </div>
           <h1 className="text-green-700 mb-2 text-2xl font-semibold">EcoScan</h1>
           <p className="text-gray-600">Recycle smarter, gain <span className="font-semibold text-green-600">eco clout</span></p>
