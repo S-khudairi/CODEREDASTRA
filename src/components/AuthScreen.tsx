@@ -228,7 +228,7 @@ export function AuthScreen({ onLogin }: AuthScreenProps) {
                       <Input
                         id="name"
                         type="text"
-                        placeholder="Carl Guinaldo"
+                        placeholder="Labubu Jones"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="pl-10"

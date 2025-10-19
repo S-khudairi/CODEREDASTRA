@@ -1,7 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600&display=swap');
+
 @custom-variant dark (&:is(.dark *));
 
 /* === FONT SETUP === */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600&display=swap');
+
 
 /* === THEME VARIABLES === */
 :root {

@@ -255,6 +255,94 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
           </div>
         </CardContent>
       </Card>
+
+        {/* Share Section */}
+<Card className="bg-white border border-green-100 shadow-sm mt-6">
+  <CardContent className="pt-8 pb-8 text-center">
+    <p className="text-gray-700 mb-5 font-semibold text-lg">
+      Proud of your progress? Share your EcoScan achievements!
+    </p>
+
+    <button
+  onClick={() => {
+    const shareText = `I just recycled ${userStats.itemsRecycled} items and earned ${userStats.points} points on EcoScan! 🌱♻️ Join me in making the planet greener!`;
+    const shareUrl = window.location.origin;
+
+    if (navigator.share) {
+      navigator.share({
+        title: "EcoScan Leaderboard",
+        text: shareText,
+        url: shareUrl,
+      });
+    } else {
+      const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+        shareText + " " + shareUrl
+      )}`;
+      window.open(twitterUrl, "_blank");
+    }
+  }}
+  className="inline-flex items-center gap-3 bg-green-600 hover:bg-green-700 
+             text-white font-bold px-10 py-4 rounded-full shadow-lg 
+             transition-transform transform hover:scale-105 active:scale-95"
+>
+  <Trophy className="h-5 w-5" />
+  <span className="text-lg tracking-wide">Share Your Rank</span>
+</button>
+
+
+    {/* Social Buttons */}
+    <div className="flex justify-center gap-6 mt-6">
+      <a
+        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+          `I'm on the EcoScan leaderboard! 🌿♻️ #EcoScan`
+        )}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-sky-500 hover:text-sky-600 transition-transform hover:scale-110"
+      >
+        <i className="fa-brands fa-twitter text-3xl"></i>
+      </a>
+
+      <a
+        href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
+          window.location.origin
+        )}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:text-blue-700 transition-transform hover:scale-110"
+      >
+        <i className="fa-brands fa-linkedin text-3xl"></i>
+      </a>
+
+      <a
+        href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+          window.location.origin
+        )}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-500 hover:text-blue-600 transition-transform hover:scale-110"
+      >
+        <i className="fa-brands fa-facebook text-3xl"></i>
+      </a>
+
+      {/* Instagram */}
+      <a
+        onClick={() => {
+          const shareText = `I just recycled ${userStats.itemsRecycled} items and earned ${userStats.points} points on EcoScan! 🌱♻️ #EcoScan #Sustainability`;
+          navigator.clipboard.writeText(shareText);
+          alert("📋 Copied your message! Now paste it into Instagram and share your impact 🌍");
+          window.open("https://www.instagram.com/", "_blank");
+        }}
+        className="cursor-pointer text-pink-500 hover:text-fuchsia-500 transition-transform hover:scale-110"
+      >
+        <i className="fa-brands fa-instagram text-3xl"></i>
+      </a>
     </div>
+  </CardContent>
+</Card>
+
+    </div>
+    
+
   );
 }
