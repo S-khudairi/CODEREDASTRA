@@ -281,12 +281,13 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
       window.open(twitterUrl, "_blank");
     }
   }}
-  className="inline-flex items-center gap-3 bg-green-600 hover:bg-green-700 
+  className="flex w-full max-w-md mx-auto items-center justify-center gap-3 bg-green-600 hover:bg-green-700 
              text-white font-bold px-10 py-4 rounded-full shadow-lg 
-             transition-transform transform hover:scale-105 active:scale-95"
+             transition-transform transform hover:scale-105 active:scale-95 whitespace-nowrap
+             m-6"
 >
-  <Trophy className="h-5 w-5" />
-  <span className="text-lg tracking-wide">Share Your Rank</span>
+  <Trophy className="h-5 w-5 flex-shrink-0" />
+  <span className="text-base sm:text-lg tracking-wide">Share Your Rank</span>
 </button>
 
 
