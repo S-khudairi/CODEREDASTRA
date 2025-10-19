@@ -4,6 +4,12 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Camera, Upload, Loader2, CheckCircle, XCircle, Recycle } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { db } from "../firebase/firestoreConfig";
+import { doc, updateDoc, increment } from "firebase/firestore";
+import toast from "react-hot-toast";
+
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 
 interface AnalysisResult {
   material: string;
@@ -12,7 +18,11 @@ interface AnalysisResult {
   instructions?: string;
 }
 
-export function PhotoAnalysis() {
+interface PhotoAnalysisProps {
+  currentUserId: string;
+}
+
+export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -21,45 +31,106 @@ export function PhotoAnalysis() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Mock analysis function
-  const analyzeImage = (file: File) => {
+  const updateUserPoints = async (userId: string, recyclable: boolean) => {
+    try {
+      const pointsToAdd = recyclable ? 10 : 5;
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, {
+        points: increment(pointsToAdd),
+        itemsRecycled: increment(1),
+      });
+      console.log(`Added ${pointsToAdd} points for user ${userId}`);
+    } catch (error) {
+      console.error("Error updating user points:", error);
+    }
+  };
+
+  const analyzeWithGemini = async (file: File) => {
     setIsAnalyzing(true);
     setPreviewImage(URL.createObjectURL(file));
 
-    // Simulate AI analysis
-    setTimeout(() => {
-      const mockResults: AnalysisResult[] = [
-        {
-          material: "Plastic Bottle (PET #1)",
-          recyclable: true,
-          confidence: 94,
-          instructions: "Rinse the bottle and remove the cap before recycling. The cap can be recycled separately.",
-        },
-        {
-          material: "Pizza Box (Cardboard)",
-          recyclable: false,
-          confidence: 88,
-          instructions: "This pizza box has grease stains. Contaminated cardboard cannot be recycled. Consider composting clean parts.",
-        },
-        {
-          material: "Aluminum Can",
-          recyclable: true,
-          confidence: 97,
-          instructions: "Rinse and crush the can to save space. Aluminum is infinitely recyclable!",
-        },
-        {
-          material: "Styrofoam Container",
-          recyclable: false,
-          confidence: 92,
-          instructions: "Styrofoam is not accepted in most curbside recycling programs. Check for specialty recycling centers.",
-        },
-      ];
+    try {
+      // Convert image to base64
+      const base64Image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
 
-      const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
-      setResult(randomResult);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      const prompt = `
+        You are EcoScan, an AI recycling expert.
+
+        Analyze the uploaded image and identify the **main object**.
+
+        Then, determine:
+        1. What the object is.
+        2. Whether it is recyclable (true or false).
+        3. Explain briefly *why* it is or isn't recyclable.
+        4. If recyclable, give clear recycling instructions (how to prepare or dispose of it properly).
+        5. If not recyclable, suggest an eco-friendly alternative or disposal method.
+
+        Respond ONLY in the following strict JSON format:
+        {
+          "object": "string - name of the main object",
+          "recyclable": true or false,
+          "reason": "string - short explanation",
+          "instructions": "string - how to recycle or dispose of it properly"
+        }
+        `;
+
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            mimeType: file.type,
+            data: base64Image.split(",")[1], // remove data URI prefix
+          },
+        },
+      ]);
+
+      const text = await result.response.text();
+      console.log("Gemini raw response:", text);
+
+      // Try to parse JSON safely
+      const match = text.match(/\{[\s\S]*\}/);
+      const parsed = match ? JSON.parse(match[0]) : null;
+
+      if (!parsed) throw new Error("Invalid Gemini response format");
+
+      setResult({
+        material: parsed.object,
+        recyclable: parsed.recyclable,
+        confidence: 100, 
+        instructions: parsed.instructions || parsed.reason,
+      });
+      if (currentUserId) {
+        await updateUserPoints(currentUserId, parsed.recyclable);
+      }
+
+      if (parsed.recyclable) {
+        toast.success(`♻️ Scanned item is recyclable! You earned 10 points!`);
+      } else {
+        toast(`🧠 Scanned item is not recyclable — but you learned something! You earned 5 points.`, {
+          icon: "✨",
+          style: {
+            background: "#2d2d2d",
+            color: "#fff",
+          },
+        });
+      }
+    } catch (err) {
+      console.error("Gemini Analysis Error:", err);
+      alert("Image analysis failed. Please try again.");
+    } finally {
       setIsAnalyzing(false);
-    }, 2000);
+    }
   };
+
+  // Mock analysis function
+  const analyzeImage = analyzeWithGemini;
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
