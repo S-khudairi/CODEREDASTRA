@@ -16,6 +16,15 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// Extend ImportMeta to include env property for Vite environment variables
+declare global {
+  interface ImportMeta {
+    env: {
+      VITE_LOCATIONIQ_API_KEY: string;
+    };
+  }
+}
+
 interface RecyclingLocation {
   id: string;
   name: string;
