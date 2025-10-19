@@ -123,8 +123,8 @@ export function RecyclingMap() {
         try {
           // Use the same format as the working example
           const encodedText = encodeURIComponent(term);
-          // Try with smaller radius and different parameters for better proximity
-          const url = `https://api.geoapify.com/v1/geocode/search?text=${encodedText}&filter=circle:${lon},${lat},5000&limit=10&apiKey=${apiKey}`;
+          // Search within 8 miles (approximately 12,875 meters)
+          const url = `https://api.geoapify.com/v1/geocode/search?text=${encodedText}&filter=circle:${lon},${lat},12875&limit=10&apiKey=${apiKey}`;
           console.log('Fetching URL:', url);
 
           const response = await fetch(url);
@@ -162,7 +162,7 @@ export function RecyclingMap() {
 
       // Try Places API with circle filter for better proximity results
       try {
-        const placesUrl = `https://api.geoapify.com/v2/places?categories=commercial.waste_management.recycling,commercial.waste_management.waste_collection,commercial.waste_management&filter=circle:${lon},${lat},8000&limit=20&apiKey=${apiKey}`;
+        const placesUrl = `https://api.geoapify.com/v2/places?categories=commercial.waste_management.recycling,commercial.waste_management.waste_collection,commercial.waste_management&filter=circle:${lon},${lat},12875&limit=20&apiKey=${apiKey}`;
         console.log('Trying Places API:', placesUrl);
 
         const placesResponse = await fetch(placesUrl);
@@ -206,39 +206,14 @@ export function RecyclingMap() {
 
       console.log('Unique results:', uniqueResults);
 
-      // Filter for recycling facilities - prioritize "recycle" or "recycling" in the title
+      // Simple filter: just check if "recycle" or "recycling" appears anywhere in the text
       const filteredResults = uniqueResults.filter((place) => {
         const name = (place.properties.name || '').toLowerCase();
         const address = (place.properties.address_line1 || '').toLowerCase();
-
-        // PRIORITY: Must have "recycle" or "recycling" anywhere in the name/title
-        const hasRecycleInName = name.includes('recycle') || name.includes('recycling');
+        const allText = `${name} ${address}`;
         
-        // Also accept if it has these recycling-related terms in the name
-        const recyclingTermsInName = ['depository', 'waste management', 'waste', 'waste center', 
-                                       'drop off', 'drop-off', 'transfer station', 'disposal'];
-        const hasRecyclingTermInName = recyclingTermsInName.some(term => name.includes(term));
-
-        // Exclude obvious false positives (but only if they don't have "recycle" in name)
-        const excludePatterns = [
-          'toyota', 'honda', 'ford', 'depot', 'chevrolet', 'bmw', 'mercedes', // car dealerships
-          'police station', 'fire station', 'train station', 'bus station', // government buildings
-          'shopping', 'mall', 'plaza', // commercial centers
-          'medical', 'hospital', 'clinic', // healthcare
-          'school', 'university', 'college', 'academy', // education
-          'restaurant', 'cafe', 'bar', 'pub', // food service
-          'hotel', 'motel', 'inn', // lodging
-          'gym', 'fitness', 'sports', // fitness
-        ];
-
-        const shouldExclude = !hasRecycleInName && excludePatterns.some(pattern =>
-          name.includes(pattern) || address.includes(pattern)
-        );
-
-        // Accept if:
-        // 1. Has "recycle/recycling" in the name (highest priority)
-        // 2. OR has other recycling-related terms in name AND not excluded
-        return (hasRecycleInName || (hasRecyclingTermInName && !shouldExclude));
+        // Accept if "recycle" or "recycling" appears anywhere
+        return allText.includes('recycle') || allText.includes('recycling');
       });
 
       console.log('Filtered results:', filteredResults);
@@ -273,8 +248,8 @@ export function RecyclingMap() {
       mappedLocations.sort((a, b) => a.distanceValue - b.distanceValue);
       console.log('After sorting:', mappedLocations.map(loc => ({ name: loc.name, distance: loc.distanceValue })));
 
-      // Limit to top 20 results
-      const limitedResults = mappedLocations.slice(0, 20);
+      // Limit to top 6 results
+      const limitedResults = mappedLocations.slice(0, 6);
 
       setLocations(limitedResults);
       sessionStorage.setItem('recyclingLocations', JSON.stringify(limitedResults));
