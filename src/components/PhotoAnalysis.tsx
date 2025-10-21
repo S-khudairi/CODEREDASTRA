@@ -307,29 +307,31 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
         <CardContent className="space-y-4">
           {!result && !isAnalyzing && (
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button
-                  onClick={startCamera}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  <Camera className="mr-2 h-4 w-4" />
-                  Take Photo
-                </Button>
-                <label className="flex-1">
-                  <Button variant="outline" className="w-full" asChild>
-                    <span>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload Photo
-                    </span>
+              {!showCamera && (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    onClick={startCamera}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Take Photo
                   </Button>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </label>
-              </div>
+                  <label className="flex-1">
+                    <Button variant="outline" className="w-full" asChild>
+                      <span>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Upload Photo
+                      </span>
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              )}
 
               {/* Camera Popup Box */}
               {showCamera && (
