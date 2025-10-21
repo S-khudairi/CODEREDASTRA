@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Trophy, TrendingUp, Award, Medal } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useState, useEffect } from "react"; // hooks
-import { collection, query, orderBy, limit, getDocs } from "firebase/firestore";    // firestore import
+import { collection, query, orderBy, limit, getDocs, doc, getDoc, where, Timestamp } from "firebase/firestore";    // firestore import
 import { db } from "../firebase/firestoreConfig";     // db
 
 interface LeaderboardUser {
@@ -20,6 +20,97 @@ interface PointsLeaderboardProps {
   currentUserId: string; // The id of the currently logged-in user
 }
 
+interface WeeklyData {
+  day: string;
+  points: number;
+}
+
+const useWeeklyProgress = (userId: string) => {
+  const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([
+    { day: "Mon", points: 0 },
+    { day: "Tue", points: 0 },
+    { day: "Wed", points: 0 },
+    { day: "Thu", points: 0 },
+    { day: "Fri", points: 0 },
+    { day: "Sat", points: 0 },
+    { day: "Sun", points: 0 },
+  ]);
+  const [totalWeekPoints, setTotalWeekPoints] = useState(0);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchWeeklyScans = async () => {
+      try {
+        // Get the start of the current week (Monday)
+        const now = new Date();
+        const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Adjust so Monday = 0
+        
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - daysFromMonday);
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        console.log("Fetching scans from:", startOfWeek);
+
+        // Query scans from this week
+        const scansRef = collection(db, "users", userId, "scans");
+        const weekQuery = query(
+          scansRef,
+          where("createdAt", ">=", Timestamp.fromDate(startOfWeek))
+        );
+
+        const querySnapshot = await getDocs(weekQuery);
+        console.log("Weekly scans found:", querySnapshot.size);
+
+        // Initialize points array for each day
+        const dayPoints = [0, 0, 0, 0, 0, 0, 0]; // Mon-Sun
+
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          const createdAt = data.createdAt?.toDate();
+          const points = data.pointsEarned || 0;
+
+          if (createdAt) {
+            const scanDay = createdAt.getDay(); // 0 = Sunday, 1 = Monday, etc.
+            const dayIndex = scanDay === 0 ? 6 : scanDay - 1; // Convert to Mon=0, Sun=6
+            dayPoints[dayIndex] += points;
+            console.log(`Scan on ${createdAt.toDateString()}: ${points} points (day index: ${dayIndex})`);
+          }
+        });
+
+        // Update the weekly data
+        const updatedWeeklyData: WeeklyData[] = [
+          { day: "Mon", points: dayPoints[0] },
+          { day: "Tue", points: dayPoints[1] },
+          { day: "Wed", points: dayPoints[2] },
+          { day: "Thu", points: dayPoints[3] },
+          { day: "Fri", points: dayPoints[4] },
+          { day: "Sat", points: dayPoints[5] },
+          { day: "Sun", points: dayPoints[6] },
+        ];
+
+        const total = dayPoints.reduce((sum, p) => sum + p, 0);
+        
+        setWeeklyData(updatedWeeklyData);
+        setTotalWeekPoints(total);
+        console.log("Weekly data updated:", updatedWeeklyData, "Total:", total);
+      } catch (error) {
+        console.error("Error fetching weekly progress:", error);
+      }
+    };
+
+    fetchWeeklyScans();
+    
+    // Refresh every 10 seconds to catch new scans
+    const interval = setInterval(fetchWeeklyScans, 10000);
+    
+    return () => clearInterval(interval);
+  }, [userId]);
+
+  return { weeklyData, totalWeekPoints };
+};
+
 /*
 const leaderboardData: LeaderboardUser[] = [
   { rank: 1, name: "Sarah Chen", points: 2847, itemsRecycled: 234, initials: "SC" },
@@ -34,16 +125,6 @@ const leaderboardData: LeaderboardUser[] = [
   { rank: 10, name: "Rachel Taylor", points: 1567, itemsRecycled: 129, initials: "RT" },
 ];
 */
-
-const weeklyProgressData = [
-  { day: "Mon", points: 45 },
-  { day: "Tue", points: 80 },
-  { day: "Wed", points: 65 },
-  { day: "Thu", points: 95 },
-  { day: "Fri", points: 110 },
-  { day: "Sat", points: 125 },
-  { day: "Sun", points: 90 },
-];
 
 const useLeaderboardData = () => {
   const [data, setData] = useState<LeaderboardUser[]>([]);
@@ -90,6 +171,11 @@ const useLeaderboardData = () => {
     };
 
     fetchLeaderboard();
+    
+    // Refresh leaderboard every 5 seconds to show point updates
+    const interval = setInterval(fetchLeaderboard, 5000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   return { data, loading };
@@ -98,14 +184,61 @@ const useLeaderboardData = () => {
 export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
   
   const { data: leaderboardData, loading } = useLeaderboardData();
+  const { weeklyData, totalWeekPoints } = useWeeklyProgress(currentUserId);
+  const [userStats, setUserStats] = useState<LeaderboardUser>({ 
+    rank: 0, 
+    points: 0, 
+    itemsRecycled: 0, 
+    initials: "Me", 
+    name: "You",
+    uid: currentUserId
+  });
 
-  const userStats = leaderboardData.find(user => user.uid === currentUserId) || { 
-        rank: 0, 
-        points: 0, 
-        itemsRecycled: 0, 
-        initials: "Me", 
-        name: "You" 
-    };  
+  // Fetch current user's stats directly and refresh periodically
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const fetchUserStats = async () => {
+      try {
+        const userRef = doc(db, "users", currentUserId);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          const name = userData.name || "You";
+          const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
+          
+          // Find rank in leaderboard
+          const userInLeaderboard = leaderboardData.find(u => u.uid === currentUserId);
+          const rank = userInLeaderboard?.rank || 0;
+          
+          setUserStats({
+            rank,
+            uid: currentUserId,
+            name,
+            points: userData.points || 0,
+            itemsRecycled: userData.itemsRecycled || 0,
+            initials,
+          });
+          
+          console.log("User stats updated:", {
+            points: userData.points,
+            itemsRecycled: userData.itemsRecycled,
+            rank
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching user stats:", error);
+      }
+    };
+
+    fetchUserStats();
+    
+    // Refresh every 3 seconds to show immediate point updates
+    const interval = setInterval(fetchUserStats, 3000);
+    
+    return () => clearInterval(interval);
+  }, [currentUserId, leaderboardData]);  
   const getRankBadge = (rank: number) => {
     if (rank === 1) return <Medal className="h-5 w-5 text-yellow-500" />;
     if (rank === 2) return <Medal className="h-5 w-5 text-gray-400" />;
@@ -161,7 +294,7 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={weeklyProgressData}>
+            <LineChart data={weeklyData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="day" stroke="#6b7280" fontSize={12} />
               <YAxis stroke="#6b7280" fontSize={12} />
@@ -184,7 +317,7 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
           </ResponsiveContainer>
           <div className="mt-4 text-center">
             <p className="text-gray-600 text-sm">
-              Total this week: <span className="text-green-600">610 points</span>
+              Total this week: <span className="text-green-600">{totalWeekPoints} points</span>
             </p>
           </div>
         </CardContent>

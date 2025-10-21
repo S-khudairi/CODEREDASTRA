@@ -2,14 +2,24 @@ import { useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Camera, Upload, Loader2, CheckCircle, XCircle, Recycle, History, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { Camera, Upload, Loader2, CheckCircle, XCircle, Recycle, History, Clock, ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "../firebase/firestoreConfig";
-import { doc, updateDoc, increment } from "firebase/firestore";
+import {
+  doc,
+  updateDoc,
+  increment,
+  collection,
+  addDoc,
+  serverTimestamp,
+  onSnapshot,
+  query,
+  orderBy,
+} from "firebase/firestore";
 import toast from "react-hot-toast";
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI((import.meta as any).env.VITE_GEMINI_API_KEY);
 
 interface AnalysisResult {
   material: string;
@@ -23,7 +33,8 @@ interface ScanHistoryItem {
   material: string;
   recyclable: boolean;
   timestamp: Date;
-  imageUrl: string;
+  imageUrl?: string;
+  pointsEarned: number;
 }
 
 interface PhotoAnalysisProps {
@@ -38,49 +49,19 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 4;
 
-  // Mock scan history data for demo
-  const [scanHistory] = useState<ScanHistoryItem[]>([
-    {
-      id: '1',
-      material: 'Plastic Water Bottle',
-      recyclable: true,
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-      imageUrl: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=200&h=200&fit=crop'
-    },
-    {
-      id: '2',
-      material: 'Aluminum Soda Can',
-      recyclable: true,
-      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5 hours ago
-      imageUrl: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=200&h=200&fit=crop'
-    },
-    {
-      id: '3',
-      material: 'Pizza Box (Greasy)',
-      recyclable: false,
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      imageUrl: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200&h=200&fit=crop'
-    },
-    {
-      id: '4',
-      material: 'Glass Jar',
-      recyclable: true,
-      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
-      imageUrl: 'https://images.unsplash.com/photo-1526947425960-945c6e72858f?w=200&h=200&fit=crop'
-    },
-    {
-      id: '5',
-      material: 'Cardboard Box',
-      recyclable: true,
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
-      imageUrl: 'https://images.unsplash.com/photo-1573883430060-e46dcafd8c3d?w=200&h=200&fit=crop'
-    },
-  ]);
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(scanHistory.length / itemsPerPage) || 1);
+    if (currentPage > maxPage) {
+      setCurrentPage(maxPage);
+    }
+  }, [scanHistory, currentPage]);
 
   // Calculate pagination
   const totalPages = Math.ceil(scanHistory.length / itemsPerPage);
@@ -110,24 +91,114 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
     return date.toLocaleDateString();
   };
 
-  const updateUserPoints = async (userId: string, recyclable: boolean) => {
+  useEffect(() => {
+    if (!currentUserId) {
+      setScanHistory([]);
+      setHistoryLoading(false);
+      return;
+    }
+
+    setHistoryLoading(true);
+
+    const scansRef = collection(db, "users", currentUserId, "scans");
+    
+    // Try without orderBy first to see if data exists
+    const unsubscribe = onSnapshot(
+      scansRef,
+      (snapshot) => {
+        console.log("Scan history snapshot received:", snapshot.size, "documents");
+        const items: ScanHistoryItem[] = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          console.log("Scan document data:", docSnap.id, data);
+          const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+
+          return {
+            id: docSnap.id,
+            material: data.material || "Unknown material",
+            recyclable: Boolean(data.recyclable),
+            timestamp: createdAt,
+            imageUrl: data.imageUrl || undefined,
+            pointsEarned: data.pointsEarned ?? (data.recyclable ? 10 : 5),
+          };
+        });
+        
+        // Sort client-side for now
+        items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        
+        setScanHistory(items);
+        setHistoryLoading(false);
+      },
+      (error) => {
+        console.error("Error loading scan history:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        toast.error("Could not load your scan history.");
+        setHistoryLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentUserId]);
+
+  const updateUserPoints = async (userId: string, recyclable: boolean, pointsToAdd: number) => {
     try {
-      const pointsToAdd = recyclable ? 10 : 5;
       const userRef = doc(db, "users", userId);
       
-      // Only increment itemsRecycled if the item is actually recyclable
+      // Always add points (10 for recyclable, 5 for non-recyclable)
       const updateData: any = {
         points: increment(pointsToAdd),
       };
       
+      // Only increment itemsRecycled counter if the item is actually recyclable
       if (recyclable) {
         updateData.itemsRecycled = increment(1);
+        console.log(`✅ Adding ${pointsToAdd} points and incrementing itemsRecycled for user ${userId}`);
+      } else {
+        console.log(`📚 Adding ${pointsToAdd} learning points for user ${userId} (non-recyclable item)`);
       }
       
       await updateDoc(userRef, updateData);
-      console.log(`Added ${pointsToAdd} points for user ${userId}${recyclable ? ' and incremented items recycled' : ''}`);
+      console.log(`✓ Points updated successfully in Firestore`);
     } catch (error) {
-      console.error("Error updating user points:", error);
+      console.error("❌ Error updating user points:", error);
+      toast.error("Could not update your points. Please try again.");
+    }
+  };
+
+  const uploadScanImage = async (file: File, userId: string) => {
+    // Storage disabled - skip upload and return undefined
+    // Images won't be saved, but scan history will still work
+    console.log("Image upload skipped (Storage not enabled)");
+    return undefined;
+  };
+
+  const saveScanRecord = async (
+    userId: string,
+    file: File,
+    parsed: { object: string; recyclable: boolean; instructions?: string; reason?: string },
+    pointsEarned: number
+  ) => {
+    try {
+      console.log("Saving scan record for user:", userId);
+      
+      // Skip image upload (Storage not enabled)
+      const imageUrl = null;
+      
+      const scanData = {
+        material: parsed.object,
+        recyclable: parsed.recyclable,
+        instructions: parsed.instructions || parsed.reason || "",
+        pointsEarned,
+        imageUrl: imageUrl,
+        createdAt: serverTimestamp(),
+      };
+      
+      console.log("Writing scan data to Firestore:", scanData);
+      const docRef = await addDoc(collection(db, "users", userId, "scans"), scanData);
+      console.log("Scan saved successfully with ID:", docRef.id);
+    } catch (error) {
+      console.error("Error saving scan record:", error);
+      toast.error("Could not save this scan to history.");
     }
   };
 
@@ -192,10 +263,11 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
         confidence: 100, 
         instructions: parsed.instructions || parsed.reason,
       });
-      if (currentUserId) {
-        await updateUserPoints(currentUserId, parsed.recyclable);
-      }
-
+      
+      // Stop the loading spinner immediately after analysis completes
+      setIsAnalyzing(false);
+      
+      // Show toast and save to Firestore in background
       if (parsed.recyclable) {
         toast.success(`♻️ Scanned item is recyclable! You earned 10 points!`);
       } else {
@@ -207,10 +279,20 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
           },
         });
       }
+      
+      if (currentUserId) {
+        const pointsEarned = parsed.recyclable ? 10 : 5;
+        // Run these in background without blocking UI
+        Promise.all([
+          updateUserPoints(currentUserId, parsed.recyclable, pointsEarned),
+          saveScanRecord(currentUserId, file, parsed, pointsEarned),
+        ]).catch((err) => {
+          console.error("Error saving scan data:", err);
+        });
+      }
     } catch (err) {
       console.error("Gemini Analysis Error:", err);
       alert("Image analysis failed. Please try again.");
-    } finally {
       setIsAnalyzing(false);
     }
   };
@@ -467,7 +549,12 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {scanHistory.length === 0 ? (
+            {historyLoading ? (
+              <div className="text-center py-8 text-gray-500">
+                <Loader2 className="h-10 w-10 animate-spin mx-auto mb-3 text-green-600" />
+                <p>Loading your scan history...</p>
+              </div>
+            ) : scanHistory.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <History className="h-12 w-12 mx-auto mb-2 opacity-20" />
                 <p>No scans yet. Start analyzing items!</p>
@@ -480,11 +567,17 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
                     className="flex items-center gap-3 p-2 rounded-lg border bg-white hover:bg-gray-50 transition-colors"
                   >
                     <div className="relative w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-gray-100">
-                      <img
-                        src={item.imageUrl}
-                        alt={item.material}
-                        className="w-full h-full object-cover"
-                      />
+                      {item.imageUrl ? (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.material}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-gray-400">
+                          <ImageOff className="h-6 w-6" />
+                        </div>
+                      )}
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -507,6 +600,7 @@ export function PhotoAnalysis({ currentUserId }: PhotoAnalysisProps) {
                       <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-500">
                         <Clock className="h-3 w-3" />
                         <span>{formatTimeAgo(item.timestamp)}</span>
+                        <span className="ml-2">• {item.pointsEarned} pts</span>
                       </div>
                     </div>
                   </div>

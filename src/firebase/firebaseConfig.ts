@@ -21,3 +21,5 @@ export const app = initializeApp(firebaseConfig);
 
 // 3. Initialize the Auth service AND EXPORT IT
 export const auth = getAuth(app); // <-- The critical line with 'export'
+// Storage disabled - not needed for now
+// export const storage = getStorage(app);
