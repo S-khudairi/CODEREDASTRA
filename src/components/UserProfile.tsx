@@ -58,7 +58,7 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
     <div className="space-y-6">
       {/* Profile Header */}
       <Card className="bg-gradient-to-br from-green-600 to-emerald-600 text-white border-none">
-        <CardContent className="pt-8 pb-8">
+        <CardContent className="pt-4 pb-8">
           <div className="flex flex-col items-center text-center mb-6">
             <Avatar className="h-24 w-24 border-4 border-white mb-4">
               <AvatarFallback className="bg-white text-green-600 text-3xl font-bold">
@@ -175,11 +175,11 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
         </CardHeader>
         <CardContent>
           <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-6 border-2 border-amber-200">
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-x-4 gap-y-8">
               {mockRewards.map((reward) => (
                 <div
                   key={reward.id}
-                  className={`flex flex-col items-center transition-all ${
+                  className={`flex flex-col items-center transition-all py-2 ${
                     reward.earned ? "" : "opacity-40 grayscale"
                   }`}
                 >
@@ -187,9 +187,6 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
                   <p className="text-xs font-semibold text-center text-gray-900">
                     {reward.name}
                   </p>
-                  {reward.earned && reward.date && (
-                    <p className="text-[10px] text-gray-500 mt-1">{reward.date}</p>
-                  )}
                   {!reward.earned && (
                     <p className="text-[10px] text-gray-400 mt-1">Locked</p>
                   )}
@@ -219,7 +216,7 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
           </Button>
           <Button 
             variant="destructive" 
-            className="w-full justify-start"
+            className="w-full justify-center"
             onClick={onLogout}
           >
             <LogOut className="h-4 w-4 mr-2" />
