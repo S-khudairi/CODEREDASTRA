@@ -110,3 +110,4 @@ Desktop.ini
 # Vite/Build Artifacts
 /.vite
 backend/serviceAccountFirebase.json
+node_modules/.vite/deps/_metadata.json

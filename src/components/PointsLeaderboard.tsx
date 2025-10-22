@@ -129,10 +129,11 @@ const leaderboardData: LeaderboardUser[] = [
 const useLeaderboardData = () => {
   const [data, setData] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalUsers, setTotalUsers] = useState(0);
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
-      // 1. Define the query
+      // 1. Define the query for top 10
       const q = query(
         collection(db, "users"),
         orderBy("points", "desc"),
@@ -161,6 +162,11 @@ const useLeaderboardData = () => {
           } as LeaderboardUser;
         });
 
+        // 2. Fetch total user count for ranking purposes
+        const allUsersQuery = query(collection(db, "users"));
+        const allUsersSnapshot = await getDocs(allUsersQuery);
+        setTotalUsers(allUsersSnapshot.size);
+
         // 2. Handle the EMPTY database case gracefully
         setData(fetchedData); // This will be [] if the database is empty
       } catch (error) {
@@ -178,12 +184,12 @@ const useLeaderboardData = () => {
     return () => clearInterval(interval);
   }, []);
 
-  return { data, loading };
+  return { data, loading, totalUsers };
 };
 
 export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
   
-  const { data: leaderboardData, loading } = useLeaderboardData();
+  const { data: leaderboardData, loading, totalUsers } = useLeaderboardData();
   const { weeklyData, totalWeekPoints } = useWeeklyProgress(currentUserId);
   const [userStats, setUserStats] = useState<LeaderboardUser>({ 
     rank: 0, 
@@ -194,7 +200,7 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
     uid: currentUserId
   });
 
-  // Fetch current user's stats directly and refresh periodically
+  // Fetch current user's stats and calculate their rank among ALL users
   useEffect(() => {
     if (!currentUserId) return;
 
@@ -207,24 +213,30 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
           const userData = userSnap.data();
           const name = userData.name || "You";
           const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
+          const userPoints = userData.points || 0;
           
-          // Find rank in leaderboard
-          const userInLeaderboard = leaderboardData.find(u => u.uid === currentUserId);
-          const rank = userInLeaderboard?.rank || 0;
+          // Calculate rank by counting how many users have MORE points
+          const allUsersQuery = query(
+            collection(db, "users"),
+            where("points", ">", userPoints)
+          );
+          const higherRankedUsers = await getDocs(allUsersQuery);
+          const rank = higherRankedUsers.size + 1; // User's rank is count of higher-ranked users + 1
           
           setUserStats({
             rank,
             uid: currentUserId,
             name,
-            points: userData.points || 0,
+            points: userPoints,
             itemsRecycled: userData.itemsRecycled || 0,
             initials,
           });
           
           console.log("User stats updated:", {
-            points: userData.points,
+            points: userPoints,
             itemsRecycled: userData.itemsRecycled,
-            rank
+            rank,
+            totalUsers
           });
         }
       } catch (error) {
@@ -238,7 +250,7 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
     const interval = setInterval(fetchUserStats, 3000);
     
     return () => clearInterval(interval);
-  }, [currentUserId, leaderboardData]);  
+  }, [currentUserId, totalUsers]);  
   const getRankBadge = (rank: number) => {
     if (rank === 1) return <Medal className="h-5 w-5 text-yellow-500" />;
     if (rank === 2) return <Medal className="h-5 w-5 text-gray-400" />;
@@ -262,8 +274,20 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
               <p className="text-green-100 text-sm mb-1">Your Rank</p>
               <div className="flex items-center gap-2">
                 <p className="text-4xl">#{userStats?.rank}</p>
-                <TrendingUp className="h-6 w-6 text-green-200" />
+                {userStats?.rank > 0 && userStats.rank <= 10 && (
+                  <Badge className="bg-yellow-500 text-white hover:bg-yellow-600">
+                    Top 10!
+                  </Badge>
+                )}
+                {userStats?.rank > 10 && (
+                  <TrendingUp className="h-6 w-6 text-green-200" />
+                )}
               </div>
+              {totalUsers > 0 && (
+                <p className="text-green-100 text-xs mt-1">
+                  Out of {totalUsers} {totalUsers === 1 ? 'user' : 'users'}
+                </p>
+              )}
             </div>
             <div className="text-right">
               <p className="text-green-100 text-sm mb-1">Total Points</p>
@@ -365,6 +389,33 @@ export function PointsLeaderboard({ currentUserId } : PointsLeaderboardProps) {
                 </div>
               </div>
             ))}
+            
+            {/* Show current user if not in top 10 */}
+            {userStats?.rank > 10 && (
+              <>
+                <div className="flex items-center justify-center py-2">
+                  <span className="text-gray-400 text-sm">• • •</span>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 border-2 border-green-600">
+                  <div className="w-8 flex items-center justify-center">
+                    <span className="text-gray-500">#{userStats.rank}</span>
+                  </div>
+                  <Avatar className="border-2 border-green-600">
+                    <AvatarFallback className="bg-green-600 text-white">
+                      {userStats.initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <p className="text-green-900">{userStats.name} (You)</p>
+                    <p className="text-xs text-gray-500">{userStats.itemsRecycled} items recycled</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-green-700">{userStats.points.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">points</p>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
