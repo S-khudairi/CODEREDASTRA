@@ -1,9 +1,15 @@
-import { Camera, MapPin, Trophy, LogOut } from "lucide-react";
+import { Camera, MapPin, Trophy, LogOut, User } from "lucide-react";
 import { PhotoAnalysis } from "./PhotoAnalysis";
 import { RecyclingMap } from "./RecyclingMap";
 import { PointsLeaderboard } from "./PointsLeaderboard";
+import { UserProfile } from "./UserProfile";
+import { EditProfile } from "./EditProfile";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Button } from "./ui/button";
+import { Avatar, AvatarFallback } from "./ui/avatar";
+import { useState, useEffect } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase/firestoreConfig";
 
 import logoUrl from "../assets/ecoscan_icon_alt3_500px.svg";
 
@@ -14,7 +20,70 @@ interface MainAppProps {
   currentUserId: string;
 }
 
+// Comment out the old logout button for later use
+/*
+const LogoutButton = ({ onLogout }: { onLogout: () => void }) => (
+  <Button
+    variant="outline"
+    onClick={onLogout}
+    className="gap-2"
+  >
+    <LogOut className="h-4 w-4" />
+    Logout
+  </Button>
+);
+*/
+
 export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
+  const [activeTab, setActiveTab] = useState("scan");
+  const [userInitials, setUserInitials] = useState("??");
+  const [userName, setUserName] = useState("");
+  
+  // Fetch user data from Firebase
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const fetchUserData = async () => {
+      try {
+        const userRef = doc(db, "users", currentUserId);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          const name = userData.name || userEmail || "User";
+          setUserName(name);
+          
+          // Generate initials from name
+          const initials = name
+            .split(' ')
+            .map((n: string) => n[0])
+            .join('')
+            .toUpperCase()
+            .substring(0, 2);
+          
+          setUserInitials(initials);
+        } else {
+          // Fallback to email-based initials
+          const emailInitials = userEmail
+            .split('@')[0]
+            .substring(0, 2)
+            .toUpperCase();
+          setUserInitials(emailInitials);
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        // Fallback to email-based initials
+        const emailInitials = userEmail
+          .split('@')[0]
+          .substring(0, 2)
+          .toUpperCase();
+        setUserInitials(emailInitials);
+      }
+    };
+
+    fetchUserData();
+  }, [currentUserId, userEmail]);
+  
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-emerald-50">
       <div className="max-w-4xl mx-auto p-4 pb-8">
@@ -27,18 +96,26 @@ export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
               <p className="text-gray-600">Recycle smarter, gain <span className="font-semibold text-green-600">eco clout</span></p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={onLogout}
-            className="gap-2"
+          
+          {/* Circular Avatar Profile Button */}
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={`rounded-full transition-all ${
+              activeTab === "profile" 
+                ? "ring-2 ring-white ring-offset-2" 
+                : "hover:ring-2 hover:ring-green-300 hover:ring-offset-2"
+            }`}
           >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Button>
+            <Avatar className="h-12 w-12 cursor-pointer border-2 border-green-600">
+              <AvatarFallback className="bg-green-600 text-white font-bold">
+                {userInitials}
+              </AvatarFallback>
+            </Avatar>
+          </button>
         </div>
 
         {/* Main Tabs */}
-        <Tabs defaultValue="scan" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3 mb-6">
             <TabsTrigger value="scan" className="flex items-center gap-2">
               <Camera className="h-4 w-4" />
@@ -64,6 +141,27 @@ export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
 
           <TabsContent value="leaderboard">
             <PointsLeaderboard currentUserId={currentUserId}/>
+          </TabsContent>
+          
+          <TabsContent value="profile">
+            <UserProfile 
+              userEmail={userEmail}
+              currentUserId={currentUserId}
+              onLogout={onLogout}
+              userInitials={userInitials}
+              userName={userName}
+              onEditProfile={() => setActiveTab("edit-profile")}
+            />
+          </TabsContent>
+
+          <TabsContent value="edit-profile">
+            <EditProfile 
+              userEmail={userEmail}
+              currentUserId={currentUserId}
+              userInitials={userInitials}
+              userName={userName}
+              onDone={() => setActiveTab("profile")}
+            />
           </TabsContent>
         </Tabs>
       </div>
