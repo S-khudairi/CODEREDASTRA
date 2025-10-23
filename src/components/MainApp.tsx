@@ -1,8 +1,9 @@
-import { Camera, MapPin, Trophy, LogOut } from "lucide-react";
+import { Camera, MapPin, Trophy, LogOut, User } from "lucide-react";
 import { PhotoAnalysis } from "./PhotoAnalysis";
 import { RecyclingMap } from "./RecyclingMap";
 import { PointsLeaderboard } from "./PointsLeaderboard";
 import { UserProfile } from "./UserProfile";
+import { EditProfile } from "./EditProfile";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Button } from "./ui/button";
 import { Avatar, AvatarFallback } from "./ui/avatar";
@@ -149,6 +150,17 @@ export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
               onLogout={onLogout}
               userInitials={userInitials}
               userName={userName}
+              onEditProfile={() => setActiveTab("edit-profile")}
+            />
+          </TabsContent>
+
+          <TabsContent value="edit-profile">
+            <EditProfile 
+              userEmail={userEmail}
+              currentUserId={currentUserId}
+              userInitials={userInitials}
+              userName={userName}
+              onDone={() => setActiveTab("profile")}
             />
           </TabsContent>
         </Tabs>

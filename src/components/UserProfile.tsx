@@ -14,6 +14,9 @@ import {
   Flame
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { useState, useEffect } from "react";
+import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { db } from "../firebase/firestoreConfig";
 
 interface UserProfileProps {
   userEmail: string;
@@ -21,6 +24,7 @@ interface UserProfileProps {
   onLogout: () => void;
   userInitials: string;
   userName: string;
+  onEditProfile?: () => void;
 }
 
 // Mock data - to be replaced with real data later
@@ -53,7 +57,60 @@ const mockStats = {
   recyclingRate: 94,
 };
 
-export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, userName }: UserProfileProps) {
+export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, userName, onEditProfile }: UserProfileProps) {
+  const [totalPoints, setTotalPoints] = useState(0);
+  const [itemsRecycled, setItemsRecycled] = useState(0);
+  const [totalScans, setTotalScans] = useState(0);
+  const [recyclingRate, setRecyclingRate] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch user stats from Firebase
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const fetchUserStats = async () => {
+      try {
+        // Fetch user document
+        const userRef = doc(db, "users", currentUserId);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          setTotalPoints(userData.points || 0);
+          setItemsRecycled(userData.itemsRecycled || 0);
+        }
+
+        // Fetch all scans to calculate total scans and recycling rate
+        const scansRef = collection(db, "users", currentUserId, "scans");
+        const scansSnap = await getDocs(scansRef);
+        
+        const totalScansCount = scansSnap.size;
+        setTotalScans(totalScansCount);
+
+        // Calculate recycling rate
+        if (totalScansCount > 0) {
+          let recyclableCount = 0;
+          scansSnap.forEach((scanDoc) => {
+            const scanData = scanDoc.data();
+            if (scanData.recyclable === true) {
+              recyclableCount++;
+            }
+          });
+          const rate = Math.round((recyclableCount / totalScansCount) * 100);
+          setRecyclingRate(rate);
+        } else {
+          setRecyclingRate(0);
+        }
+      } catch (error) {
+        console.error("Error fetching user stats:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUserStats();
+  }, [currentUserId]);
+
   return (
     <div className="space-y-6">
       {/* Profile Header */}
@@ -76,11 +133,11 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-3 gap-4 mt-6">
             <div className="text-center">
-              <p className="text-3xl font-bold">{mockStats.totalPoints}</p>
+              <p className="text-3xl font-bold">{isLoading ? "..." : totalPoints}</p>
               <p className="text-green-100 text-xs mt-1">Total Points</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold">{mockStats.itemsRecycled}</p>
+              <p className="text-3xl font-bold">{isLoading ? "..." : itemsRecycled}</p>
               <p className="text-green-100 text-xs mt-1">Items Recycled</p>
             </div>
             <div className="text-center">
@@ -106,7 +163,7 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
                 <Target className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{mockStats.totalScans}</p>
+                <p className="text-2xl font-bold text-gray-900">{isLoading ? "..." : totalScans}</p>
                 <p className="text-xs text-gray-500">Total Scans</p>
               </div>
             </div>
@@ -116,7 +173,7 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
                 <Flame className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-gray-900">{mockStats.recyclingRate}%</p>
+                <p className="text-2xl font-bold text-gray-900">{isLoading ? "..." : `${recyclingRate}%`}</p>
                 <p className="text-xs text-gray-500">Recycling Rate</p>
               </div>
             </div>
@@ -206,13 +263,13 @@ export function UserProfile({ userEmail, currentUserId, onLogout, userInitials, 
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button variant="outline" className="w-full justify-start">
+          <Button 
+            variant="outline" 
+            className="w-full justify-start"
+            onClick={onEditProfile}
+          >
             <User className="h-4 w-4 mr-2" />
             Edit Profile
-          </Button>
-          <Button variant="outline" className="w-full justify-start">
-            <Trophy className="h-4 w-4 mr-2" />
-            View All Achievements
           </Button>
           <Button 
             variant="destructive" 
