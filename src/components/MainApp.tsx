@@ -89,13 +89,16 @@ export function MainApp({ userEmail, onLogout, currentUserId }: MainAppProps) {
       <div className="max-w-4xl mx-auto p-4 pb-8">
         {/* Header */}
         <div className="flex items-center justify-between py-6">
-          <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setActiveTab("scan")}
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none p-0"
+          >
             <img src={logoUrl} alt="EcoScan logo" className="w-auto flex-shrink-0 object-contain" style={{ height: '5rem' }} />
             <div className="flex flex-col justify-center">
               <h1 className="text-green-700 mb-2">EcoScan</h1>
               <p className="text-gray-600">Recycle smarter, gain <span className="font-semibold text-green-600">eco clout</span></p>
             </div>
-          </div>
+          </button>
           
           {/* Circular Avatar Profile Button */}
           <button
